@@ -95,14 +95,42 @@ async function scrape(url, season, series) {
   const teams = $('select[name$="ddlTeam$ddlTeam"] option').map((_, o) => $(o).attr('value')).get().filter(Boolean);
   let head = rows($).head;
   const out = [];
+  // KBO's server sometimes answers a page request with the PREVIOUS team's page (stale session cache).
+  // Every page is checked: the right team/page must be selected, its rows must not be identical to the
+  // previous team's same page, and most rows must carry this team's name. Otherwise it is fetched again.
+  const sig = r => JSON.stringify(r.rows.map(x => x.c));
+  const majority = r => { const c = {}; r.rows.forEach(x => c[x.c[2]] = (c[x.c[2]] || 0) + 1); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0]; };
+  let prevSigs = [];
   for (const tm of teams) {
     const ov = { ...base, [P + 'ddlTeam$ddlTeam']: tm };
-    const t$ = await post(url, $, P + 'ddlTeam$ddlTeam', ov);
-    if (selv(t$, 'ddlTeam$ddlTeam') !== tm || selv(t$, 'ddlSeries$ddlSeries') !== series || selv(t$, 'ddlSeason$ddlSeason') !== season)
-      throw new Error('team filter not applied: ' + tm);
-    const docs = [t$];
-    for (const p of pages(t$).slice(1)) docs.push(await post(url, t$, P + 'ucPager$btnNo' + p, ov));
-    for (const d of docs) { const r = rows(d); if (r.head.length) head = r.head; r.rows.forEach(x => out.push([x.id, tm, ...x.c.slice(1)])); }
+    let got = null;
+    for (let attempt = 0; attempt < 5 && !got; attempt++) {
+      if (attempt) await sleep(1500 * attempt);
+      const t$ = await post(url, $, P + 'ddlTeam$ddlTeam', ov);
+      if (selv(t$, 'ddlTeam$ddlTeam') !== tm || selv(t$, 'ddlSeries$ddlSeries') !== series || selv(t$, 'ddlSeason$ddlSeason') !== season) continue;
+      const r1 = rows(t$);
+      if (r1.rows.length && prevSigs[0] === sig(r1)) continue;
+      const teamName = majority(r1);
+      const all = [r1];
+      let ok = true;
+      for (const p of pages(t$).slice(1)) {
+        let rp = null;
+        for (let k = 0; k < 4 && !rp; k++) {
+          const p$ = await post(url, t$, P + 'ucPager$btnNo' + p, ov);
+          const r = rows(p$);
+          const hf = p$('input[name$="hfPage"]').attr('value');
+          const stale = selv(p$, 'ddlTeam$ddlTeam') !== tm || (hf && hf !== String(p)) ||
+                        (r.rows.length && prevSigs[all.length] === sig(r)) || (r.rows.length > 1 && majority(r) !== teamName);
+          if (!stale || k === 3) rp = r; else await sleep(800 * (k + 1));
+        }
+        if (!rp) { ok = false; break; }
+        all.push(rp);
+      }
+      if (ok) got = all;
+    }
+    if (!got) throw new Error('could not get clean pages for team ' + tm);
+    prevSigs = got.map(sig);
+    for (const r of got) { if (r.head.length) head = r.head; r.rows.forEach(x => out.push([x.id, tm, ...x.c.slice(1)])); }
   }
   return { head, teams, rows: out };
 }
