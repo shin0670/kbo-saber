@@ -161,6 +161,9 @@ const totalHead = new Map();
 async function totalRows(kind, id) {
   const key = kind + id;
   if (!totalCache.has(key)) {
+    // the record pages remember the last series picked in this session (e.g. 한국시리즈) — start a fresh
+    // session so the page shows regular-season lines
+    jar.clear();
     const $ = await req(`https://www.koreabaseball.com/Record/Player/${kind}Detail/Total.aspx?playerId=${id}`);
     const t = $('table').first();
     const head = t.find('thead th').map((_, th) => $(th).text().trim()).get();
