@@ -128,6 +128,32 @@ for (const [key, url, y, s] of jobs) {
     console.error(`[${n}/${jobs.length}] ${key}: 실패 — ${e.message} (기존 데이터 유지)`);
   }
 }
+// ---------- park factors: every regular-season result with home/away (2001+) ----------
+// data["parkY"] = { teamCode: [homeG, runs in home games, awayG, runs in away games] }
+for (const y of years.filter(y => y >= 2001)) {
+  const T = {};
+  try {
+    for (let m = 3; m <= 11; m++) {
+      const body = new URLSearchParams({ leId: '1', srIdList: '0', seasonId: String(y), gameMonth: String(m).padStart(2, '0'), teamId: '' });
+      const res = await fetch('https://www.koreabaseball.com/ws/Schedule.asmx/GetScheduleList', {
+        method: 'POST', headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }, body: body.toString() });
+      const j = await res.json();
+      for (const R of j.rows || []) {
+        const cells = R.row, play = cells.find(c => c.Class === 'play');
+        const gid = (cells.map(c => c.Text || '').join(' ').match(/gameId=(\d{8}[A-Z]{2}[A-Z]{2}\d)/) || [])[1];
+        if (!play || !gid) continue;
+        const sp = cheerio.load(play.Text)('em span').map((_, e) => cheerio.load(e).text().trim()).get();
+        if (sp.length < 3 || sp[0] === '' || sp[2] === '') continue;
+        const a = +sp[0], h = +sp[2]; if (isNaN(a) || isNaN(h)) continue;
+        const aw = gid.slice(8, 10), hm = gid.slice(10, 12);
+        T[hm] ??= [0, 0, 0, 0]; T[aw] ??= [0, 0, 0, 0];
+        T[hm][0]++; T[hm][1] += a + h; T[aw][2]++; T[aw][3] += a + h;
+      }
+    }
+    if (Object.keys(T).length) { data['park' + y] = T; console.log(`park${y}: ${Object.keys(T).length}개 팀`); }
+  } catch (e) { errors.push(`park${y}: ${e.message}`); }
+}
+
 data._meta = { scrapedAt: new Date().toISOString(), errors };
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(data));
