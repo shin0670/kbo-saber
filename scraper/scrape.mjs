@@ -95,42 +95,58 @@ async function scrape(url, season, series) {
   const teams = $('select[name$="ddlTeam$ddlTeam"] option').map((_, o) => $(o).attr('value')).get().filter(Boolean);
   let head = rows($).head;
   const out = [];
-  // KBO's server sometimes answers a page request with the PREVIOUS team's page (stale session cache).
-  // Every page is checked: the right team/page must be selected, its rows must not be identical to the
-  // previous team's same page, and most rows must carry this team's name. Otherwise it is fetched again.
+  // KBO server bug: for some season/team combinations (e.g. hitters' Basic2, 2001 롯데), page 2+ returns
+  // the PREVIOUS team's rows no matter how often it is requested (the server keeps the old list).
+  // Each page is checked; if it is wrong, the team is fetched again split by position (포수/내야수/외야수),
+  // where every list fits on one page, and merged with page 1. Players without a fielding position
+  // (pitchers who batted a few times) can still be missing in that case; they are reported in _meta.
   const sig = r => JSON.stringify(r.rows.map(x => x.c));
   const majority = r => { const c = {}; r.rows.forEach(x => c[x.c[2]] = (c[x.c[2]] || 0) + 1); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0]; };
-  let prevSigs = [];
+  const seen = new Set();
+  const posOpts = $('select[name$="ddlPos$ddlPos"] option').map((_, o) => $(o).attr('value')).get().filter(Boolean);
   for (const tm of teams) {
     const ov = { ...base, [P + 'ddlTeam$ddlTeam']: tm };
-    let got = null;
-    for (let attempt = 0; attempt < 5 && !got; attempt++) {
-      if (attempt) await sleep(1500 * attempt);
-      const t$ = await post(url, $, P + 'ddlTeam$ddlTeam', ov);
-      if (selv(t$, 'ddlTeam$ddlTeam') !== tm || selv(t$, 'ddlSeries$ddlSeries') !== series || selv(t$, 'ddlSeason$ddlSeason') !== season) continue;
-      const r1 = rows(t$);
-      if (r1.rows.length && prevSigs[0] === sig(r1)) continue;
-      const teamName = majority(r1);
-      const all = [r1];
-      let ok = true;
-      for (const p of pages(t$).slice(1)) {
-        let rp = null;
-        for (let k = 0; k < 4 && !rp; k++) {
-          const p$ = await post(url, t$, P + 'ucPager$btnNo' + p, ov);
-          const r = rows(p$);
-          const hf = p$('input[name$="hfPage"]').attr('value');
-          const stale = selv(p$, 'ddlTeam$ddlTeam') !== tm || (hf && hf !== String(p)) ||
-                        (r.rows.length && prevSigs[all.length] === sig(r)) || (r.rows.length > 1 && majority(r) !== teamName);
-          if (!stale || k === 3) rp = r; else await sleep(800 * (k + 1));
-        }
-        if (!rp) { ok = false; break; }
-        all.push(rp);
-      }
-      if (ok) got = all;
+    let t$ = null;
+    for (let a = 0; a < 3 && !t$; a++) {
+      const x = await post(url, $, P + 'ddlTeam$ddlTeam', ov);
+      if (selv(x, 'ddlTeam$ddlTeam') === tm && selv(x, 'ddlSeries$ddlSeries') === series && selv(x, 'ddlSeason$ddlSeason') === season) t$ = x;
     }
-    if (!got) throw new Error('could not get clean pages for team ' + tm);
-    prevSigs = got.map(sig);
-    for (const r of got) { if (r.head.length) head = r.head; r.rows.forEach(x => out.push([x.id, tm, ...x.c.slice(1)])); }
+    if (!t$) throw new Error('team filter not applied: ' + tm);
+    const r1 = rows(t$);
+    const teamName = majority(r1);
+    const got = [r1];
+    let broken = false;
+    for (const p of pages(t$).slice(1)) {
+      let ok = null;
+      for (let a = 0; a < 2 && !ok; a++) {
+        const p$ = await post(url, t$, P + 'ucPager$btnNo' + p, ov);
+        const r = rows(p$);
+        const hf = p$('input[name$="hfPage"]').attr('value');
+        const wrong = selv(p$, 'ddlTeam$ddlTeam') !== tm || (hf && hf !== String(p)) || seen.has(sig(r)) ||
+                      (r.rows.length > 1 && majority(r) !== teamName);
+        if (!wrong) ok = r;
+      }
+      if (!ok) { broken = true; break; }
+      got.push(ok);
+    }
+    let teamRows = got.flatMap(r => r.rows);
+    if (broken) {
+      if (!posOpts.length) throw new Error(`team ${tm}: page 2+ returns another team's rows (no position filter to work around)`);
+      const byId = new Map(r1.rows.map(x => [x.id, x]));
+      for (const pos of posOpts) {
+        const pov = { ...ov, [P + 'ddlPos$ddlPos']: pos };
+        const q$ = await post(url, t$, P + 'ddlPos$ddlPos', pov);
+        if (selv(q$, 'ddlPos$ddlPos') !== pos || selv(q$, 'ddlTeam$ddlTeam') !== tm) throw new Error(`team ${tm}: position filter ${pos} not applied`);
+        const parts = [rows(q$)];
+        for (const p of pages(q$).slice(1)) parts.push(rows(await post(url, q$, P + 'ucPager$btnNo' + p, pov)));
+        for (const r of parts) for (const x of r.rows) if (x.c[2] === teamName || !byId.has(x.id)) byId.set(x.id, x);
+      }
+      teamRows = [...byId.values()];
+      warnings.push(`${season} ${url.split('/Player/')[1]} ${tm}: KBO 페이지 오류 → 포지션별로 다시 받음 (${teamRows.length}명)`);
+    }
+    for (const r of got) if (r.rows.length) seen.add(sig(r));
+    if (r1.head.length) head = r1.head;
+    teamRows.forEach(x => out.push([x.id, tm, ...x.c.slice(1)]));
   }
   return { head, teams, rows: out };
 }
@@ -138,6 +154,7 @@ async function scrape(url, season, series) {
 // ---------- main ----------
 const data = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : {};
 const errors = [];
+const warnings = [];
 const jobs = [];
 for (const y of years) {
   for (const k in REG) { if ((k === 'run' || k === 'def') && y < 2001) continue; jobs.push([k + y, B + REG[k], String(y), '0']); }
@@ -163,9 +180,17 @@ for (const y of years.filter(y => y >= 2001)) {
   try {
     for (let m = 3; m <= 11; m++) {
       const body = new URLSearchParams({ leId: '1', srIdList: '0', seasonId: String(y), gameMonth: String(m).padStart(2, '0'), teamId: '' });
+      if (m === 3) await req('https://www.koreabaseball.com/Schedule/Schedule.aspx'); // session cookie
       const res = await fetch('https://www.koreabaseball.com/ws/Schedule.asmx/GetScheduleList', {
-        method: 'POST', headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }, body: body.toString() });
-      const j = await res.json();
+        method: 'POST', body: body.toString(),
+        headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                   'Accept': 'application/json, text/javascript, */*; q=0.01', 'X-Requested-With': 'XMLHttpRequest',
+                   'Origin': 'https://www.koreabaseball.com', 'Referer': 'https://www.koreabaseball.com/Schedule/Schedule.aspx',
+                   'Cookie': cookieHeader() } });
+      saveCookies(res);
+      const txt = await res.text();
+      if (txt.trimStart()[0] !== '{') throw new Error('schedule service returned HTML (month ' + m + ')');
+      const j = JSON.parse(txt);
       for (const R of j.rows || []) {
         const cells = R.row, play = cells.find(c => c.Class === 'play');
         const gid = (cells.map(c => c.Text || '').join(' ').match(/gameId=(\d{8}[A-Z]{2}[A-Z]{2}\d)/) || [])[1];
@@ -182,7 +207,7 @@ for (const y of years.filter(y => y >= 2001)) {
   } catch (e) { errors.push(`park${y}: ${e.message}`); }
 }
 
-data._meta = { scrapedAt: new Date().toISOString(), errors };
+data._meta = { scrapedAt: new Date().toISOString(), errors, warnings };
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(data));
 console.log(`저장: ${OUT} · 실패 ${errors.length}개`);

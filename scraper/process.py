@@ -457,3 +457,13 @@ dump("meta.json", {"players": players, "series": SERIES_NAME, "scrapedAt": meta_
                    "league": [{k: (round(v, 4) if isinstance(v, float) else v) for k, v in L.items()} for L in LEAGUE]})
 print(f"seasons {len(LEAGUE)}  hitters {len(HROWS)}  pitchers {len(PROWS)}  post-h {len(PSH)}  post-p {len(PSP)}  players {len(players)}")
 print("scrape errors:", meta_in.get("errors"))
+for w in meta_in.get("warnings") or []:
+    print("  warning:", w)
+# audit: players in the basic tables without a row in the detail tables (KBO paging bug leftovers)
+for a, b in (("hb1", "hb2"), ("pb1", "pb2")):
+    miss = 0
+    for k in raw:
+        if k.startswith(a) and (b + k[3:]) in raw:
+            have = {(r[0], r[3]) for r in raw[b + k[3:]]["rows"]}
+            miss += sum(1 for r in raw[k]["rows"] if (r[0], r[3]) not in have)
+    print(f"audit {a}->{b}: {miss} player-seasons without detail stats")
