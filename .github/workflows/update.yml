@@ -1,0 +1,75 @@
+name: 기록 업데이트 & 배포
+
+on:
+  schedule:
+    # 매일 밤 23:40 (한국시간) — 3월~11월(시범경기~한국시리즈)만. cron은 UTC 기준이라 14:40.
+    - cron: "40 14 * 3-11 *"
+  workflow_dispatch:        # Actions 탭에서 "Run workflow" 버튼으로 바로 실행
+    inputs:
+      years:
+        description: "다시 수집할 시즌 (예: 2026 또는 2024-2026). 비우면 올해만"
+        required: false
+  push:
+    branches: [main]
+    paths: ["site/**", "scraper/process.py"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: npm ci
+
+      - name: KBO 기록 수집
+        if: github.event_name != 'push'
+        run: |
+          if [ -n "${{ github.event.inputs.years }}" ]; then
+            node scraper/scrape.mjs --years "${{ github.event.inputs.years }}"
+          else
+            node scraper/scrape.mjs
+          fi
+
+      - name: 세이버 지표 계산
+        run: python scraper/process.py data/kbo_raw.json site/data
+
+      - name: 바뀐 기록 저장 (commit)
+        run: |
+          git config user.name "kbo-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data site/data
+          git diff --cached --quiet || git commit -m "기록 업데이트 $(TZ=Asia/Seoul date +'%Y-%m-%d %H:%M')"
+          git push
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

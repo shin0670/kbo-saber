@@ -1,0 +1,694 @@
+<title>KBO 세이버 기록실</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: white sticky header with one global player search; record views are stacked white panels on a pale ground —
+   category TOP5 cards first, then the full ranking table; player page = profile card + season summary + record tables. */
+:root {
+  --bg: #f2f4f6;
+  --surface: #ffffff;
+  --head: #f7f8fa;
+  --ink: #1d1f24;
+  --sub: #4b4f57;
+  --muted: #8a8f98;
+  --line: #e5e8eb;
+  --line-strong: #d3d7dc;
+  --accent: #00a05a;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6f6ee;
+  --gold: #f0a500;
+  --up: #e5372c;
+  --down: #2f6fdc;
+  --font-body: "Noto Sans KR", -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-num: "Roboto", "Noto Sans KR", -apple-system, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111316; --surface: #1b1e22; --head: #22262b; --ink: #eceef1; --sub: #c3c7cd; --muted: #8d939b;
+    --line: #2c3036; --line-strong: #3a3f46; --accent: #2fc77e; --accent-ink: #0d1a13; --accent-soft: #173226;
+    --gold: #ffbf3c; --up: #ff7366; --down: #74a6ff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111316; --surface: #1b1e22; --head: #22262b; --ink: #eceef1; --sub: #c3c7cd; --muted: #8d939b;
+  --line: #2c3036; --line-strong: #3a3f46; --accent: #2fc77e; --accent-ink: #0d1a13; --accent-soft: #173226;
+  --gold: #ffbf3c; --up: #ff7366; --down: #74a6ff; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* header */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); padding-inline: 16px; }
+.top-in { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; gap: 16px; padding-block: 10px; flex-wrap: wrap; }
+.logo { font-weight: 800; font-size: 18px; letter-spacing: -.02em; white-space: nowrap; background: none; border: 0; padding: 0; cursor: pointer; }
+.logo b { color: var(--accent); }
+.search { position: relative; flex: 1 1 280px; max-width: 460px; }
+.search input { width: 100%; height: 40px; border: 2px solid var(--accent); border-radius: 20px; padding: 0 16px 0 40px; background: var(--surface); outline: none; }
+.search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; fill: none; stroke: var(--accent); stroke-width: 2.4; }
+.sugg { position: absolute; left: 0; right: 0; top: 46px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .12); overflow: hidden; }
+.sugg button { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; width: 100%; padding: 9px 14px; border: 0; background: none; text-align: left; cursor: pointer; }
+.sugg button[aria-selected="true"], .sugg button:hover { background: var(--accent-soft); }
+.sugg .nm { font-weight: 700; }
+.sugg .nm mark { background: none; color: var(--accent); }
+.sugg .info { color: var(--muted); font-size: 12.5px; }
+.sugg .war { color: var(--sub); font-size: 12.5px; text-align: right; }
+.sugg .face { width: 34px; height: 34px; font-size: 13px; }
+.sugg .none { padding: 14px; color: var(--muted); }
+.nav { max-width: 1200px; margin: 0 auto; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.nav button { border: 0; background: none; padding: 10px 14px; font-weight: 700; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
+.nav button[aria-current="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+main { max-width: 1200px; margin: 0 auto; padding: 16px 16px 48px; display: flex; flex-direction: column; gap: 14px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.panel-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.panel-h h2 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
+.panel-h .sub { color: var(--muted); font-size: 12.5px; }
+
+/* controls */
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pill { display: inline-flex; background: var(--head); border-radius: 999px; padding: 3px; }
+.pill button { border: 0; background: none; padding: 6px 16px; border-radius: 999px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.pill button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
+.sel { height: 36px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); padding: 0 10px; }
+.teams { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+.teams button { flex: none; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 999px; padding: 5px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.teams button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: var(--surface); }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px rgb(255 255 255 / .35); }
+
+/* TOP5 cards */
+.cats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 860px) { .cats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .cats { grid-template-columns: 1fr; } }
+.cat { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cat h3 { margin: 0; font-size: 13px; color: var(--sub); font-weight: 700; display: flex; justify-content: space-between; }
+.cat h3 span { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+.first { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.first .v { font-family: var(--font-num); font-size: 26px; font-weight: 700; color: var(--accent); margin-left: auto; font-variant-numeric: tabular-nums; }
+.first .nm { font-weight: 800; font-size: 15px; display: block; }
+.first .tm { color: var(--muted); font-size: 12px; }
+.cat ol { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; }
+.cat li button { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; width: 100%; background: none; border: 0; padding: 2px 0; cursor: pointer; text-align: left; font-size: 13px; }
+.cat li .rk { color: var(--muted); font-family: var(--font-num); }
+.cat li .val { font-family: var(--font-num); font-variant-numeric: tabular-nums; color: var(--sub); }
+.cat li button:hover .who { color: var(--accent); }
+.face { position: relative; width: 38px; height: 38px; border-radius: 50%; flex: none; overflow: hidden; background: var(--tc, #6b7280); display: inline-grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; }
+.face img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 12%; background: var(--head); }
+.face.sm { width: 28px; height: 28px; font-size: 12px; }
+.face.lg { width: 84px; height: 84px; font-size: 28px; }
+.more { align-self: center; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 999px; padding: 7px 22px; cursor: pointer; font-weight: 700; color: var(--sub); }
+.more:hover { border-color: var(--accent); color: var(--accent); }
+.badge { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; flex: none; }
+
+/* tables */
+.tw { overflow-x: auto; border-top: 2px solid var(--ink); }
+table { border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 10px 8px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th { background: var(--head); font-size: 12.5px; font-weight: 500; color: var(--sub); cursor: pointer; user-select: none; position: relative; }
+th:hover { color: var(--ink); }
+th.on { color: var(--accent); font-weight: 700; }
+th.on::after { content: "▼"; font-size: 8px; margin-left: 3px; vertical-align: 2px; }
+th.on.asc::after { content: "▲"; }
+th abbr { text-decoration: none; }
+td { font-family: var(--font-num); font-size: 13.5px; color: var(--sub); }
+td.on { color: var(--ink); font-weight: 700; background: var(--accent-soft); }
+td.l, th.l { text-align: left; }
+td.rk { color: var(--muted); width: 44px; }
+td.rk.top { color: var(--accent); font-weight: 700; }
+.sticky { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+th.sticky { background: var(--head); z-index: 2; }
+tbody tr:hover td { background: var(--head); }
+tbody tr:hover td.on { background: var(--accent-soft); }
+tr.total td { background: var(--head); font-weight: 700; color: var(--ink); }
+.who { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 0; cursor: pointer; font-family: var(--font-body); font-weight: 700; color: var(--ink); text-align: left; }
+.who:hover { color: var(--accent); }
+.tmn { color: var(--muted); font-family: var(--font-body); font-size: 12.5px; font-weight: 400; }
+.good { color: var(--up); } .bad { color: var(--down); }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 12.5px; }
+.pages { display: flex; gap: 4px; flex-wrap: wrap; }
+.pages button { min-width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; font-family: var(--font-num); }
+.pages button[aria-current="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.pages button:disabled { opacity: .35; cursor: default; }
+.empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+
+/* player */
+.profile { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+
+.profile h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.03em; }
+.profile .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--sub); font-size: 13.5px; }
+.profile .meta span + span::before { content: ""; display: inline-block; width: 1px; height: 11px; background: var(--line-strong); margin-right: 14px; vertical-align: -1px; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.summary div { padding: 14px 12px; text-align: center; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.summary div:last-child { border-right: 0; }
+.summary .k { font-size: 12px; color: var(--muted); }
+.summary .v { font-family: var(--font-num); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.summary .r { font-size: 11.5px; color: var(--accent); font-weight: 700; min-height: 17px; }
+.back { align-self: flex-start; background: none; border: 0; color: var(--sub); cursor: pointer; padding: 0; font-weight: 500; }
+.back:hover { color: var(--accent); }
+.chart { overflow-x: auto; }
+.chart svg { display: block; }
+
+/* guide */
+.gloss { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.term { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.term h4 { margin: 0; font-size: 15px; font-family: var(--font-num); }
+.term h4 span { font-family: var(--font-body); color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 6px; }
+.term p { margin: 0; color: var(--sub); max-width: 65ch; }
+.term code { font-family: var(--font-num); font-size: 12px; background: var(--head); padding: 3px 7px; border-radius: 4px; overflow-wrap: anywhere; color: var(--ink); }
+.prose p { margin: 0; max-width: 75ch; color: var(--sub); }
+.prose { display: flex; flex-direction: column; gap: 8px; }
+footer { max-width: 1200px; margin: 0 auto; padding: 0 16px 32px; color: var(--muted); font-size: 12px; }
+footer button { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; }
+.loading { padding: 80px 16px; text-align: center; color: var(--muted); }
+@media (max-width: 640px) {
+  .panel { padding: 14px; border-radius: 12px; }
+  .logo { font-size: 16px; }
+  .search { flex-basis: 100%; max-width: none; order: 3; }
+  th, td { padding: 9px 6px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <button class="logo" id="logo" type="button">KBO <b>세이버</b> 기록실</button>
+    <div class="search" role="combobox" aria-expanded="false" aria-haspopup="listbox" id="sbox">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="q" type="search" autocomplete="off" placeholder="선수 이름 검색 (초성도 돼요: ㄱㄷㅇ)" aria-label="선수 검색" aria-controls="sugg">
+      <div class="sugg" id="sugg" role="listbox" hidden></div>
+    </div>
+  </div>
+  <nav class="nav" id="nav">
+    <button data-v="rank" aria-current="true">기록 순위</button>
+    <button data-v="post" aria-current="false">포스트시즌</button>
+    <button data-v="league" aria-current="false">리그 환경</button>
+    <button data-v="guide" aria-current="false">지표 설명</button>
+  </nav>
+</header>
+<main id="app"><div class="loading">기록을 불러오는 중…</div></main>
+<footer id="foot"></footer>
+
+<script>
+(() => {
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const SERIES = { 4: '와일드카드', 3: '준플레이오프', 5: '플레이오프', 7: '한국시리즈' };
+const SORDER = [4, 3, 5, 7];
+const TEAMNOW = { LG: 'LG', HH: '한화', SK: 'SSG', SS: '삼성', NC: 'NC', KT: 'KT', LT: '롯데', HT: 'KIA', OB: '두산', WO: '키움', HD: '현대', SB: '쌍방울' };
+const TCOLOR = { LG: '#c30452', OB: '#1a1748', SS: '#074ca1', HT: '#ea0029', LT: '#0a2a5c', HH: '#ff6600', SK: '#ce0e2d', NC: '#315288', KT: '#2b2b2b', WO: '#820024', HD: '#00a0e2', SB: '#1b4e9b' };
+const tcol = tm => TCOLOR[tm] || '#6b7280';
+
+let D = null;
+const S = { view: 'rank', type: 'bat', season: null, team: '', qual: 'q', set: 'basic', sort: 'AVG', dir: -1, page: 0,
+            ps: null, series: 'all', psType: 'bat', psSort: 'OPS', psDir: -1, psPage: 0,
+            player: null, pTab: 'basic' };
+
+// ---------- format ----------
+const f3 = v => v == null ? '-' : (v < 0 ? '-' : '') + Math.abs(v).toFixed(3).replace(/^0/, '');
+const f2 = v => v == null ? '-' : v.toFixed(2);
+const f1 = v => v == null ? '-' : v.toFixed(1);
+const f0 = v => v == null ? '-' : String(Math.round(v));
+const pct = v => v == null ? '-' : (v * 100).toFixed(1) + '%';
+const int = v => v == null ? '-' : v.toLocaleString('ko-KR');
+const ipf = o => o == null ? '-' : Math.floor(o / 3) + (o % 3 ? ` ${o % 3}/3` : '');
+
+// ---------- hangul search ----------
+const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const choOf = s => [...s].map(ch => { const c = ch.charCodeAt(0) - 0xac00; return c >= 0 && c < 11172 ? CHO[Math.floor(c / 588)] : ch; }).join('');
+const isCho = s => /^[ㄱ-ㅎ]+$/.test(s);
+
+// ---------- data ----------
+const objs = t => t.rows.map(r => { const o = {}; t.cols.forEach((c, i) => o[c] = r[i]); return o; });
+async function load() {
+  const get = n => fetch('data/' + n).then(r => { if (!r.ok) throw new Error(n); return r.json(); });
+  const [h, p, ph, pp, m] = await Promise.all(['hitters.json', 'pitchers.json', 'post_hitters.json', 'post_pitchers.json', 'meta.json'].map(get));
+  D = { H: objs(h), P: objs(p), PH: objs(ph), PP: objs(pp), meta: m, names: m.players, lg: {} };
+  m.league.forEach(L => D.lg[L.y] = L);
+  for (const r of D.P) r.IP = r.outs / 3;
+  for (const r of D.PP) r.IP = r.outs / 3;
+  for (const r of D.H) fgParts(r);
+  D.years = m.league.map(L => L.y).sort((a, b) => b - a);
+  D.psYears = [...new Set(D.PH.map(r => r.y))].sort((a, b) => b - a);
+  S.season = D.years[0]; S.ps = D.psYears[0];
+  // player index for search
+  const idx = new Map();
+  const touch = (r, kind) => {
+    let o = idx.get(r.id);
+    if (!o) idx.set(r.id, o = { id: r.id, name: D.names[r.id] || r.id, y0: r.y, y1: r.y, tm: r.tm, team: r.team, pa: 0, ip: 0, war: 0, pos: '' });
+    if (r.y < o.y0) o.y0 = r.y;
+    if (r.y >= o.y1) { o.y1 = r.y; o.tm = r.tm; o.team = r.team; if (kind === 'h' && r.pos) o.pos = r.pos; }
+    if (kind === 'h') { o.pa += r.PA || 0; o.war += r.WAR || 0; } else { o.ip += r.IP || 0; o.war += r.WAR || 0; }
+  };
+  D.H.forEach(r => touch(r, 'h')); D.P.forEach(r => touch(r, 'p'));
+  for (const o of idx.values()) { o.pitcher = o.ip > o.pa / 4.3; if (o.pitcher) o.pos = '투수'; o.cho = choOf(o.name); }
+  D.idx = [...idx.values()];
+  if (m.scrapedAt) $('#foot').innerHTML = `출처: KBO 공식 기록실 · ${esc(new Date(m.scrapedAt).toLocaleString('ko-KR', { dateStyle: 'long', timeStyle: 'short' }))} 기준 · 세이버 지표는 이 사이트가 공식 기록으로 직접 계산했어요 (<button data-go="guide">계산 방식</button>)`;
+}
+
+// FanGraphs summary columns: BsR = 도루 + 병살, Off = 타격 + 구장 + BsR, Def = 수비 + 포지션
+function fgParts(r) {
+  r.BsR = r.wSB == null && r.wGDP == null ? null : (r.wSB || 0) + (r.wGDP || 0);
+  r.Off = (r.wRAA || 0) + (r.Park || 0) + (r.BsR || 0);
+  r.Def = r.Fld == null && r.Pos == null ? null : (r.Fld || 0) + (r.Pos || 0);
+  return r;
+}
+// ---------- aggregation ----------
+const sum = (rows, k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
+function aggBat(rows) {
+  const o = {}; ['G','PA','AB','R','H','2B','3B','HR','RBI','BB','IBB','HBP','SO','GDP','SAC','SF','SB','CS'].forEach(k => o[k] = sum(rows, k));
+  const tb = o.H + o['2B'] + 2 * o['3B'] + 3 * o.HR, od = o.AB + o.BB + o.HBP + o.SF;
+  o.AVG = o.AB ? o.H / o.AB : null; o.OBP = od ? (o.H + o.BB + o.HBP) / od : null; o.SLG = o.AB ? tb / o.AB : null;
+  o.OPS = o.AB ? o.OBP + o.SLG : null; o.ISO = o.AB ? o.SLG - o.AVG : null;
+  const bd = o.AB - o.SO - o.HR + o.SF; o.BABIP = bd > 0 ? (o.H - o.HR) / bd : null;
+  o['K%'] = o.PA ? o.SO / o.PA : null; o['BB%'] = o.PA ? o.BB / o.PA : null;
+  const w = rows.filter(r => r.wOBA != null && r.PA), tp = sum(w, 'PA');
+  o.wOBA = tp ? w.reduce((a, r) => a + r.wOBA * r.PA, 0) / tp : null;
+  o['wRC+'] = tp ? w.reduce((a, r) => a + (r['wRC+'] ?? 0) * r.PA, 0) / tp : null;
+  o.wRAA = sum(rows, 'wRAA'); o.wSB = rows.some(r => r.wSB != null) ? sum(rows, 'wSB') : null;
+  o.Pos = rows.some(r => r.Pos != null) ? sum(rows, 'Pos') : null; o.WAR = sum(rows, 'WAR');
+  for (const k of ['wGDP', 'Fld', 'Park']) o[k] = rows.some(r => r[k] != null) ? sum(rows, k) : null;
+  o.WARnd = sum(rows, 'WARnd');
+  return fgParts(o);
+}
+function aggPit(rows) {
+  const o = {}; ['G','W','L','SV','HLD','BSV','QS','CG','SHO','outs','H','HR','BB','IBB','HBP','SO','R','ER','TBF','NP'].forEach(k => o[k] = sum(rows, k));
+  const ip = o.outs / 3; o.IP = ip;
+  o.ERA = ip ? o.ER * 9 / ip : null; o.WHIP = ip ? (o.H + o.BB) / ip : null;
+  o['K/9'] = ip ? o.SO * 9 / ip : null; o['BB/9'] = ip ? o.BB * 9 / ip : null; o['HR/9'] = ip ? o.HR * 9 / ip : null;
+  o['K%'] = o.TBF ? o.SO / o.TBF : null; o['BB%'] = o.TBF ? o.BB / o.TBF : null; o['K-BB%'] = o.TBF ? (o.SO - o.BB) / o.TBF : null;
+  const bip = o.TBF - o.SO - o.BB - o.HBP - o.HR; o.BABIP = bip > 0 ? (o.H - o.HR) / bip : null;
+  const w = rows.filter(r => r.FIP != null && r.outs), wo = sum(w, 'outs');
+  o.FIP = wo ? w.reduce((a, r) => a + r.FIP * r.outs, 0) / wo : null;
+  o['ERA+'] = wo ? w.reduce((a, r) => a + (r['ERA+'] ?? 100) * r.outs, 0) / wo : null;
+  o['FIP-'] = wo ? w.reduce((a, r) => a + (r['FIP-'] ?? 100) * r.outs, 0) / wo : null;
+  o['ERA-'] = wo ? w.reduce((a, r) => a + (r['ERA-'] ?? 100) * r.outs, 0) / wo : null;
+  o.GS = rows.some(r => r.GS != null) ? sum(rows, 'GS') : null;
+  const ld = o.H + o.BB + o.HBP - 1.4 * o.HR; o['LOB%'] = ld > 0 ? (o.H + o.BB + o.HBP - o.R) / ld : null;
+  o.WAR = sum(rows, 'WAR');
+  return o;
+}
+function aggPost(rows, pit) {
+  if (pit) {
+    const o = {}; ['G','W','L','SV','HLD','CG','SHO','outs','H','HR','BB','HBP','SO','R','ER','TBF'].forEach(k => o[k] = sum(rows, k));
+    const ip = o.outs / 3; o.IP = ip; o.ERA = ip ? o.ER * 9 / ip : null; o.WHIP = ip ? (o.H + o.BB) / ip : null;
+    o['K/9'] = ip ? o.SO * 9 / ip : null; o['K%'] = o.TBF ? o.SO / o.TBF : null; o['BB%'] = o.TBF ? o.BB / o.TBF : null;
+    const w = rows.filter(r => r.FIP != null && r.outs), wo = sum(w, 'outs');
+    o.FIP = wo ? w.reduce((a, r) => a + r.FIP * r.outs, 0) / wo : null;
+    return o;
+  }
+  const o = {}; ['G','PA','AB','H','2B','3B','HR','RBI','SB','CS','BB','HBP','SO','GDP','E'].forEach(k => o[k] = sum(rows, k));
+  const tb = o.H + o['2B'] + 2 * o['3B'] + 3 * o.HR, od = o.AB + o.BB + o.HBP;
+  o.AVG = o.AB ? o.H / o.AB : null; o.OBP = od ? (o.H + o.BB + o.HBP) / od : null; o.SLG = o.AB ? tb / o.AB : null;
+  o.OPS = o.AB ? o.OBP + o.SLG : null; o['K%'] = o.PA ? o.SO / o.PA : null; o['BB%'] = o.PA ? o.BB / o.PA : null;
+  const w = rows.filter(r => r.wOBA != null), wp = w.reduce((a, r) => a + (r.PA || r.AB), 0);
+  o.wOBA = wp ? w.reduce((a, r) => a + r.wOBA * (r.PA || r.AB), 0) / wp : null;
+  return o;
+}
+
+// ---------- columns ----------
+const C = (k, l, fmt, x = {}) => ({ k, l, fmt, ...x });
+const ipCol = C('IP', '이닝', (v, r) => ipf(r.outs));
+const COLS = {
+  bat: {
+    basic: [C('AVG','타율',f3),C('G','경기',int),C('PA','타석',int),C('AB','타수',int),C('R','득점',int),C('H','안타',int),C('2B','2루타',int),C('3B','3루타',int),C('HR','홈런',int),C('RBI','타점',int),C('SB','도루',int),C('BB','볼넷',int),C('SO','삼진',int),C('OBP','출루율',f3),C('SLG','장타율',f3),C('OPS','OPS',f3)],
+    sabr: [C('WAR','WAR',f1,{t:[4,0]}),C('PA','타석',int),C('HR','홈런',int),C('BB%','BB%',pct),C('K%','K%',pct),C('ISO','ISO',f3),C('BABIP','BABIP',f3),C('AVG','AVG',f3),C('OBP','OBP',f3),C('SLG','SLG',f3),C('wOBA','wOBA',f3),C('wRC+','wRC+',f0,{t:[130,70]}),C('BsR','BsR',f1),C('Off','Off',f1),C('Def','Def',f1),C('WARnd','WAR(수비 제외)',f1)],
+  },
+  pit: {
+    basic: [C('ERA','평균자책',f2,{asc:1}),C('G','경기',int),C('W','승',int),C('L','패',int),C('SV','세이브',int),C('HLD','홀드',int),C('GS','선발',int),ipCol,C('H','피안타',int),C('HR','피홈런',int),C('BB','볼넷',int),C('SO','탈삼진',int),C('R','실점',int),C('ER','자책',int),C('QS','QS',int),C('WHIP','WHIP',f2),C('ERA+','ERA+',f0)],
+    sabr: [C('WAR','WAR',f1,{t:[4,0]}),C('GS','GS',int),ipCol,C('K/9','K/9',f2),C('BB/9','BB/9',f2),C('HR/9','HR/9',f2),C('K%','K%',pct),C('BB%','BB%',pct),C('K-BB%','K-BB%',pct),C('BABIP','BABIP',f3),C('LOB%','LOB%',pct),C('ERA','ERA',f2),C('FIP','FIP',f2),C('ERA-','ERA-',f0,{t:[70,130]}),C('FIP-','FIP-',f0,{t:[70,130]})],
+  },
+  pbat: [C('AVG','타율',f3),C('G','경기',int),C('PA','타석',int),C('AB','타수',int),C('H','안타',int),C('2B','2루타',int),C('3B','3루타',int),C('HR','홈런',int),C('RBI','타점',int),C('SB','도루',int),C('BB','볼넷',int),C('SO','삼진',int),C('OBP','출루율',f3),C('SLG','장타율',f3),C('OPS','OPS',f3),C('wOBA','wOBA',f3)],
+  ppit: [C('ERA','평균자책',f2,{asc:1}),C('G','경기',int),C('W','승',int),C('L','패',int),C('SV','세이브',int),C('HLD','홀드',int),ipCol,C('H','피안타',int),C('HR','피홈런',int),C('BB','볼넷',int),C('SO','탈삼진',int),C('ER','자책',int),C('WHIP','WHIP',f2,{asc:1}),C('FIP','FIP',f2,{asc:1}),C('K%','K%',pct)],
+};
+// which way is "good" for each stat (-1: higher first, 1: lower first), by batter/pitcher
+const LOW_BAT = new Set(['SO', 'K%', 'GDP', 'CS']);
+const LOW_PIT = new Set(['ERA', 'WHIP', 'FIP', 'FIP-', 'ERA-', 'BB%', 'BB/9', 'HR/9', 'H', 'HR', 'BB', 'IBB', 'HBP', 'R', 'ER', 'L', 'BABIP', 'BSV']);
+const better = (pit, k) => (pit ? LOW_PIT : LOW_BAT).has(k) ? 1 : -1;
+const WARPARTS = [C('wRAA','타격',f1),C('Park','구장',f1),C('wSB','도루',f1),C('wGDP','병살',f1),C('BsR','BsR',f1),C('Off','Off',f1),C('Fld','수비',f1),C('Pos','포지션',f1),C('Def','Def',f1),C('WARnd','WAR(수비 제외)',f1),C('WAR','WAR',f1)];
+const ALLCOLS = [...COLS.bat.basic, ...COLS.bat.sabr, ...COLS.pit.basic, ...COLS.pit.sabr, ...COLS.pbat, ...COLS.ppit];
+const tone = (c, v) => { if (!c.t || v == null) return ''; const [g, b] = c.t; return g > b ? (v >= g ? 'good' : v <= b ? 'bad' : '') : (v <= g ? 'good' : v >= b ? 'bad' : ''); };
+
+// ---------- shared bits ----------
+const teamDot = tm => `<span class="dot" style="background:${tcol(tm)}"></span>`;
+const IMG = (y, id) => `https://6ptotvmi5753.edge.naverncp.com/KBO_IMAGE/person/middle/${y}/${id}.jpg`;
+const face = (id, tm, y, size = '') => {
+  const nm = D.names[id] || '?', cur = D.years[0];
+  const tries = [...new Set([Math.min(y || cur, cur), cur])].filter(v => v >= 2016);
+  const img = tries.length ? `<img alt="" loading="lazy" src="${IMG(tries[0], encodeURIComponent(id))}" data-alt="${tries.slice(1).map(v => IMG(v, encodeURIComponent(id))).join('|')}" onerror="faceErr(this)">` : '';
+  return `<span class="face ${size}" style="--tc:${tcol(tm)}">${esc(nm[0])}${img}</span>`;
+};
+window.faceErr = img => { const rest = (img.dataset.alt || '').split('|').filter(Boolean); if (rest.length) { img.dataset.alt = rest.slice(1).join('|'); img.src = rest[0]; } else img.remove(); };
+const lastYear = id => D.idx.find(o => o.id === id)?.y1;
+const who = r => `<button class="who" data-pid="${esc(r.id)}">${face(r.id, r.tm, r.y || lastYear(r.id), 'sm')}${esc(D.names[r.id] || r.id)}</button>`;
+function sortRows(rows, k, dir) {
+  return rows.slice().sort((a, b) => { const x = a[k], y = b[k]; if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+}
+function table(cols, rows, o = {}) {
+  const { sort, dir, lead = [], rank = false, start = 0, totalIdx = -1, sortable = true } = o;
+  const h = `<tr>${rank ? '<th class="sticky">순위</th>' : ''}${lead.map((l, i) => `<th class="l ${i === 0 ? 'sticky' : ''}" style="${i === 0 && rank ? 'left:44px' : ''}">${l.l}</th>`).join('')}${cols.map(c =>
+    `<th ${sortable ? `data-k="${c.k}"` : ''} class="${c.k === sort ? 'on' + (dir > 0 ? ' asc' : '') : ''}">${c.l}</th>`).join('')}</tr>`;
+  let prev = null, shownRank = 0;
+  const b = rows.map((r, i) => {
+    const v = r[sort];
+    if (rank && (i === 0 || v !== prev)) shownRank = start + i + 1;
+    prev = v;
+    return `<tr class="${i === totalIdx ? 'total' : ''}">${rank ? `<td class="rk sticky ${shownRank <= 3 ? 'top' : ''}">${shownRank}</td>` : ''}${lead.map((l, j) =>
+      `<td class="l ${j === 0 ? 'sticky' : ''}" style="${j === 0 && rank ? 'left:44px' : ''}">${l.f(r)}</td>`).join('')}${cols.map(c =>
+      `<td class="${c.k === sort ? 'on' : ''} ${tone(c, r[c.k])}">${c.fmt(r[c.k], r)}</td>`).join('')}</tr>`;
+  }).join('');
+  return `<div class="tw"><table><thead>${h}</thead><tbody>${b}</tbody></table></div>`;
+}
+function bindSort(get, set, pit) {
+  document.querySelectorAll('#app th[data-k]').forEach(th => th.onclick = () => {
+    const k = th.dataset.k, [sk, sd] = get();
+    set(k, sk === k ? -sd : better(pit, k));
+  });
+}
+function pager(total, per, page) {
+  const n = Math.max(1, Math.ceil(total / per));
+  let s = Math.max(0, Math.min(page - 4, n - 9)), e = Math.min(n, s + 9);
+  let h = `<button data-pg="${page - 1}" ${page === 0 ? 'disabled' : ''} aria-label="이전">‹</button>`;
+  for (let i = s; i < e; i++) h += `<button data-pg="${i}" aria-current="${i === page}">${i + 1}</button>`;
+  h += `<button data-pg="${page + 1}" ${page >= n - 1 ? 'disabled' : ''} aria-label="다음">›</button>`;
+  return `<div class="pages">${h}</div>`;
+}
+
+// ---------- ranking view ----------
+function minReq(pit, career) {
+  const G = D.lg[S.season]?.G ?? 144;
+  if (pit) return career ? { q: 1000, a: 300, b: 100, all: 0 }[S.qual] : { q: G, a: 50, b: 20, all: 0 }[S.qual];
+  return career ? { q: 3000, a: 1000, b: 300, all: 0 }[S.qual] : { q: Math.ceil(G * 3.1), a: 100, b: 50, all: 0 }[S.qual];
+}
+function rankPool() {
+  const pit = S.type === 'pit', src = pit ? D.P : D.H, career = S.season === 'career';
+  if (!career) return src.filter(r => r.y === S.season && (!S.team || r.tm === S.team));
+  const by = new Map();
+  for (const r of src) { if (S.team && r.tm !== S.team) continue; (by.get(r.id) || by.set(r.id, []).get(r.id)).push(r); }
+  return [...by.entries()].map(([id, rs]) => {
+    const ys = rs.map(r => r.y), last = rs.reduce((a, r) => r.y >= a.y ? r : a);
+    return { ...(pit ? aggPit(rs) : aggBat(rs)), id, tm: last.tm, team: `${Math.min(...ys)}–${Math.max(...ys)}` };
+  });
+}
+const qualified = (rows, pit, min) => rows.filter(r => pit ? r.IP >= min : r.PA >= min);
+
+function renderRank() {
+  const pit = S.type === 'pit', career = S.season === 'career';
+  const pool = rankPool();
+  const QMIN = minReq(pit, career);
+  const saveQ = S.qual; S.qual = 'q'; const regMin = minReq(pit, career); S.qual = saveQ;
+  const reg = qualified(pool, pit, regMin);
+  const cats = pit
+    ? [['W', '승리', int, -1], ['HLD', '홀드', int, -1], ['SV', '세이브', int, -1], ['ERA', '평균자책점', f2, 1, true], ['SO', '탈삼진', int, -1], ['WAR', 'WAR', f1, -1], ['WHIP', 'WHIP', f2, 1, true], ['FIP', 'FIP', f2, 1, true], ['K-BB%', 'K-BB%', pct, -1, true]]
+    : [['WAR', 'WAR', f1, -1], ['HR', '홈런', int, -1], ['wRC+', 'wRC+', f0, -1, true], ['AVG', '타율', f3, -1, true], ['RBI', '타점', int, -1], ['H', '안타', int, -1], ['SB', '도루', int, -1], ['OPS', 'OPS', f3, -1, true], ['wOBA', 'wOBA', f3, -1, true]];
+  const shownCats = S.moreCats ? cats : cats.slice(0, 3);
+  const catHTML = shownCats.map(([k, l, fmt, d, needQ]) => {
+    const list = sortRows((needQ ? reg : pool).filter(r => r[k] != null), k, d).slice(0, 5);
+    if (!list.length) return '';
+    const [a, ...rest] = list;
+    return `<div class="cat"><h3>${l}${needQ ? `<span>${pit ? '규정이닝' : '규정타석'}</span>` : ''}</h3>
+      <button class="first" data-pid="${esc(a.id)}">${face(a.id, a.tm, a.y || lastYear(a.id))}<span><span class="nm">${esc(D.names[a.id])}</span><span class="tm">${esc(a.team)}</span></span><span class="v">${fmt(a[k], a)}</span></button>
+      <ol>${rest.map((r, i) => `<li><button data-pid="${esc(r.id)}"><span class="rk">${i + 2}</span><span class="who">${esc(D.names[r.id])} <span class="tmn">${esc(r.team)}</span></span><span class="val">${fmt(r[k], r)}</span></button></li>`).join('')}</ol></div>`;
+  }).join('');
+
+  const cols = COLS[S.type][S.set];
+  if (!cols.some(c => c.k === S.sort)) { S.sort = cols[0].k; S.dir = better(pit, cols[0].k); }
+  const rows = sortRows(qualified(pool, pit, QMIN), S.sort, S.dir);
+  const per = 30; S.page = Math.min(S.page, Math.max(0, Math.ceil(rows.length / per) - 1));
+  const shown = rows.slice(S.page * per, S.page * per + per);
+  const lead = [{ l: '선수명', f: who }, { l: career ? '기간' : '팀', f: r => `<span class="tmn">${esc(r.team)}</span>` }];
+  if (!career) lead.push(pit ? { l: '보직', f: r => `<span class="tmn">${r.role}</span>` } : { l: '포지션', f: r => `<span class="tmn">${r.pos || '-'}</span>` });
+  const qLabel = pit
+    ? { q: career ? '1000이닝 이상' : `규정이닝 (${regMin}이닝)`, a: career ? '300이닝 이상' : '50이닝 이상', b: career ? '100이닝 이상' : '20이닝 이상', all: '전체 선수' }
+    : { q: career ? '3000타석 이상' : `규정타석 (${regMin}타석)`, a: career ? '1000타석 이상' : '100타석 이상', b: career ? '300타석 이상' : '50타석 이상', all: '전체 선수' };
+  const present = new Set((pit ? D.P : D.H).filter(r => career || r.y === S.season).map(r => r.tm));
+  const teamLabel = c => { if (career) return TEAMNOW[c]; const r = (pit ? D.P : D.H).find(r => r.y === S.season && r.tm === c); return r ? r.team : TEAMNOW[c]; };
+  const L = D.lg[S.season];
+  const yearLabel = career ? '통산' : `${S.season} 시즌`;
+
+  $('#app').innerHTML = `
+  <section class="panel">
+    <div class="bar">
+      <div class="pill" id="t-type"><button data-t="bat" aria-pressed="${!pit}">타자</button><button data-t="pit" aria-pressed="${pit}">투수</button></div>
+      <select class="sel" id="t-season" aria-label="시즌"><option value="career" ${career ? 'selected' : ''}>통산 (1982~)</option>${D.years.map(y => `<option value="${y}" ${y === S.season ? 'selected' : ''}>${y} 시즌</option>`).join('')}</select>
+    </div>
+    <div class="teams" id="t-team"><button data-tm="" aria-pressed="${!S.team}">전체</button>${Object.keys(TEAMNOW).filter(c => present.has(c)).map(c =>
+      `<button data-tm="${c}" aria-pressed="${S.team === c}">${teamDot(c)}${esc(teamLabel(c))}</button>`).join('')}</div>
+  </section>
+  <section class="panel">
+    <div class="panel-h"><h2>${yearLabel} 부문별 TOP 5</h2><span class="sub">이름을 누르면 선수 기록으로 이동해요</span></div>
+    <div class="cats">${catHTML || '<p class="hint">기록이 없어요.</p>'}</div>
+    <button class="more" id="t-more" aria-expanded="${!!S.moreCats}">${S.moreCats ? '접기' : `부문 더보기 (${pit ? '평균자책점, 탈삼진, WAR, WHIP, FIP, K-BB%' : '타율, 타점, 안타, 도루, OPS, wOBA'})`}</button>
+  </section>
+  <section class="panel">
+    <div class="panel-h"><h2>${yearLabel} ${pit ? '투수' : '타자'} 순위</h2>
+      <div class="bar">
+        <div class="pill" id="t-set"><button data-s="basic" aria-pressed="${S.set === 'basic'}">기본 기록</button><button data-s="sabr" aria-pressed="${S.set === 'sabr'}">세이버 지표</button></div>
+        <select class="sel" id="t-qual" aria-label="기준">${Object.entries(qLabel).map(([k, v]) => `<option value="${k}" ${k === S.qual ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      </div></div>
+    ${shown.length ? table(cols, shown, { sort: S.sort, dir: S.dir, lead, rank: true, start: S.page * per }) : `<div class="empty">조건에 맞는 선수가 없어요. 기준을 '전체 선수'로 바꿔 보세요.</div>`}
+    <div class="foot"><span>${rows.length.toLocaleString()}명 · 열 제목을 누르면 정렬돼요${S.set === 'sabr' && !career && L && !L.hasDef ? ` · ${S.season}년은 수비·주루 기록이 없어 WAR가 타격 기준이에요` : ''}</span>${pager(rows.length, per, S.page)}</div>
+  </section>`;
+
+  $('#t-type').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.t === S.type) return; S.type = b.dataset.t; S.sort = ''; S.page = 0; S.team = ''; render(); };
+  $('#t-season').onchange = e => { S.season = e.target.value === 'career' ? 'career' : +e.target.value; S.page = 0; render(); };
+  $('#t-team').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.team = b.dataset.tm; S.page = 0; render(); };
+  $('#t-set').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.set = b.dataset.s; S.sort = ''; S.page = 0; render(); };
+  $('#t-qual').onchange = e => { S.qual = e.target.value; S.page = 0; render(); };
+  $('#t-more').onclick = () => { S.moreCats = !S.moreCats; render(); };
+  document.querySelectorAll('.pages button').forEach(b => b.onclick = () => { S.page = +b.dataset.pg; render(); $('#t-set').closest('.panel').scrollIntoView({ block: 'start' }); });
+  bindSort(() => [S.sort, S.dir], (k, d) => { S.sort = k; S.dir = d; S.page = 0; render(); }, pit);
+}
+
+// ---------- postseason ----------
+function renderPost() {
+  const pit = S.psType === 'pit', src = pit ? D.PP : D.PH, career = S.ps === 'career';
+  const base = src.filter(r => (career || r.y === S.ps) && (S.series === 'all' || r.s === +S.series));
+  const by = new Map();
+  for (const r of base) { const k = career ? r.id : r.id + '|' + r.tm; (by.get(k) || by.set(k, []).get(k)).push(r); }
+  let rows = [...by.values()].map(rs => ({ ...aggPost(rs, pit), id: rs[0].id, tm: rs.at(-1).tm, team: career ? `${new Set(rs.map(r => r.y)).size}시즌` : rs[0].team }))
+    .filter(r => pit ? r.outs > 0 : r.PA > 0);
+  const cols = pit ? COLS.ppit : COLS.pbat;
+  if (!cols.some(c => c.k === S.psSort)) { S.psSort = cols[0].k; S.psDir = better(pit, cols[0].k); }
+  const minPA = career ? (pit ? 30 : 50) : 0;
+  const ranked = sortRows(rows.filter(r => !minPA || (pit ? r.IP >= minPA : r.PA >= minPA)), S.psSort, S.psDir);
+  const per = 30; S.psPage = Math.min(S.psPage, Math.max(0, Math.ceil(ranked.length / per) - 1));
+  const avail = career ? SORDER : SORDER.filter(s => src.some(r => r.y === S.ps && r.s === s));
+  const ks = career ? null : (() => { const t = [...new Set(D.PH.filter(r => r.y === S.ps && r.s === 7).map(r => r.tm + '|' + r.team))]; return t.map(x => x.split('|')); })();
+  const cats = pit ? [['IP', '이닝', (v, r) => ipf(r.outs), -1], ['SO', '탈삼진', int, -1], ['W', '승리', int, -1], ['SV', '세이브', int, -1]]
+                   : [['H', '안타', int, -1], ['HR', '홈런', int, -1], ['RBI', '타점', int, -1], ['OPS', 'OPS', f3, -1, true]];
+  const catHTML = cats.map(([k, l, fmt, d, q]) => {
+    const list = sortRows(rows.filter(r => r[k] != null && (!q || r.PA >= (career ? 50 : 10))), k, d).slice(0, 5).map(r => ({ ...r, y: career ? null : S.ps }));
+    if (!list.length) return '';
+    const [a, ...rest] = list;
+    return `<div class="cat"><h3>${l}${q ? `<span>${career ? '50' : '10'}타석 이상</span>` : ''}</h3><button class="first" data-pid="${esc(a.id)}">${face(a.id, a.tm, a.y || lastYear(a.id))}<span><span class="nm">${esc(D.names[a.id])}</span><span class="tm">${esc(a.team)}</span></span><span class="v">${fmt(a[k], a)}</span></button>
+      <ol>${rest.map((r, i) => `<li><button data-pid="${esc(r.id)}"><span class="rk">${i + 2}</span><span class="who">${esc(D.names[r.id])} <span class="tmn">${esc(r.team)}</span></span><span class="val">${fmt(r[k], r)}</span></button></li>`).join('')}</ol></div>`;
+  }).join('');
+  const title = `${career ? '가을야구 통산' : S.ps + ' 포스트시즌'}${S.series !== 'all' ? ' · ' + SERIES[S.series] : ''}`;
+  $('#app').innerHTML = `
+  <section class="panel">
+    <div class="bar">
+      <div class="pill" id="p-type"><button data-t="bat" aria-pressed="${!pit}">타자</button><button data-t="pit" aria-pressed="${pit}">투수</button></div>
+      <select class="sel" id="p-year" aria-label="시즌"><option value="career" ${career ? 'selected' : ''}>가을야구 통산</option>${D.psYears.map(y => `<option value="${y}" ${y === S.ps ? 'selected' : ''}>${y} 포스트시즌</option>`).join('')}</select>
+      <select class="sel" id="p-series" aria-label="시리즈"><option value="all">전체 시리즈</option>${avail.map(s => `<option value="${s}" ${String(s) === String(S.series) ? 'selected' : ''}>${SERIES[s]}</option>`).join('')}</select>
+    </div>
+    ${ks && ks.length ? `<p class="hint">한국시리즈 · ${ks.map(([tm, n]) => `${teamDot(tm)} ${esc(n)}`).join(' &nbsp;vs&nbsp; ')}</p>` : ''}
+  </section>
+  <section class="panel"><div class="panel-h"><h2>${title} TOP 5</h2></div><div class="cats">${catHTML || '<p class="hint">기록이 없어요.</p>'}</div></section>
+  <section class="panel">
+    <div class="panel-h"><h2>${title} ${pit ? '투수' : '타자'} 기록</h2><span class="sub">${career ? (pit ? '30이닝' : '50타석') + ' 이상 · ' : ''}wOBA·FIP는 그해 정규시즌 리그 기준으로 계산</span></div>
+    ${ranked.length ? table(cols, ranked.slice(S.psPage * per, S.psPage * per + per), { sort: S.psSort, dir: S.psDir, rank: true, start: S.psPage * per,
+      lead: [{ l: '선수명', f: who }, { l: career ? '출전' : '팀', f: r => `<span class="tmn">${esc(r.team)}</span>` }] }) : `<div class="empty">이 시즌에는 해당 시리즈 기록이 없어요.</div>`}
+    <div class="foot"><span>${ranked.length}명</span>${pager(ranked.length, per, S.psPage)}</div>
+  </section>`;
+  $('#p-type').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.psType = b.dataset.t; S.psSort = ''; S.psPage = 0; render(); };
+  $('#p-year').onchange = e => { S.ps = e.target.value === 'career' ? 'career' : +e.target.value; S.series = 'all'; S.psPage = 0; render(); };
+  $('#p-series').onchange = e => { S.series = e.target.value; S.psPage = 0; render(); };
+  document.querySelectorAll('.pages button').forEach(b => b.onclick = () => { S.psPage = +b.dataset.pg; render(); });
+  bindSort(() => [S.psSort, S.psDir], (k, d) => { S.psSort = k; S.psDir = d; S.psPage = 0; render(); }, pit);
+}
+
+// ---------- player page ----------
+function seasonRank(row, key, pit, dir) {
+  const y = row.y, G = D.lg[y]?.G ?? 144, src = pit ? D.P : D.H;
+  const needQ = ['AVG', 'OBP', 'SLG', 'OPS', 'wRC+', 'ERA', 'WHIP', 'FIP'].includes(key);
+  const pool = src.filter(r => r.y === y && r[key] != null && (!needQ || (pit ? r.IP >= G : r.PA >= Math.ceil(G * 3.1))));
+  if (needQ && !pool.some(r => r.id === row.id && r.tm === row.tm)) return '';
+  const ahead = pool.filter(r => dir < 0 ? r[key] > row[key] : r[key] < row[key]).length;
+  return `리그 ${ahead + 1}위`;
+}
+function warChart(rows) {
+  const by = new Map(); rows.forEach(r => by.set(r.y, (by.get(r.y) || 0) + (r.WAR || 0)));
+  const ys = [...by.keys()].sort((a, b) => a - b); if (!ys.length) return '';
+  const vals = ys.map(y => by.get(y)), max = Math.max(1, ...vals), min = Math.min(0, ...vals);
+  const bw = 30, gap = 10, padL = 30, padB = 22, padT = 18, h = 180, W = padL + ys.length * (bw + gap) + 8;
+  const yS = v => padT + (max - v) / (max - min) * (h - padT - padB);
+  let g = '';
+  const step = max - min > 8 ? 2 : 1;
+  for (let t = Math.ceil(min); t <= Math.floor(max); t += step) g += `<line x1="${padL}" x2="${W}" y1="${yS(t)}" y2="${yS(t)}" stroke="var(--line)" stroke-width="${t === 0 ? 1.5 : 1}"/><text x="${padL - 6}" y="${yS(t) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--font-num)">${t}</text>`;
+  const best = Math.max(...vals);
+  const bars = ys.map((y, i) => { const v = vals[i], x = padL + 6 + i * (bw + gap), y0 = yS(0), y1 = yS(v);
+    return `<rect x="${x}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(1, Math.abs(y1 - y0))}" rx="4" fill="${v < 0 ? 'var(--down)' : v === best ? 'var(--accent)' : 'var(--line-strong)'}"><title>${y}: WAR ${v.toFixed(2)}</title></rect>
+      <text x="${x + bw / 2}" y="${(v >= 0 ? y1 : y1 + 13) - 5}" text-anchor="middle" font-size="11" fill="var(--sub)" font-family="var(--font-num)">${v.toFixed(1)}</text>
+      <text x="${x + bw / 2}" y="${h - 5}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-num)">${String(y).slice(2)}</text>`; }).join('');
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${h}" width="${W}" height="${h}" role="img" aria-label="시즌별 WAR 그래프">${g}${bars}</svg></div>`;
+}
+function renderPlayer() {
+  const id = S.player, P = D.idx.find(o => o.id === id);
+  if (!P) { S.player = null; return render(); }
+  const hr = D.H.filter(r => r.id === id).sort((a, b) => a.y - b.y);
+  const pr = D.P.filter(r => r.id === id).sort((a, b) => a.y - b.y);
+  const ph = D.PH.filter(r => r.id === id).sort((a, b) => a.y - b.y || SORDER.indexOf(a.s) - SORDER.indexOf(b.s));
+  const pp = D.PP.filter(r => r.id === id).sort((a, b) => a.y - b.y || SORDER.indexOf(a.s) - SORDER.indexOf(b.s));
+  const pit = P.pitcher, main = pit ? pr : hr;
+  const last = main.at(-1);
+  const teams = [...new Set([...hr, ...pr].map(r => r.team))];
+  const ca = pit ? aggPit(pr) : aggBat(hr);
+  const sumKeys = pit
+    ? [['ERA', '평균자책', f2, 1], ['W', '승', int, -1], ['L', '패', int, 1], ['SV', '세이브', int, -1], ['HLD', '홀드', int, -1], ['SO', '탈삼진', int, -1], ['WHIP', 'WHIP', f2, 1], ['WAR', 'WAR', f2, -1]]
+    : [['AVG', '타율', f3, -1], ['HR', '홈런', int, -1], ['RBI', '타점', int, -1], ['H', '안타', int, -1], ['SB', '도루', int, -1], ['OPS', 'OPS', f3, -1], ['wRC+', 'wRC+', f0, -1], ['WAR', 'WAR', f2, -1]];
+  const summary = (row, ranked) => `<div class="summary">${sumKeys.map(([k, l, fmt, d]) => `<div><span class="k">${l}</span><span class="v">${fmt(row[k], row)}</span><span class="r">${ranked && k !== 'L' ? seasonRank(row, k, pit, d) : ''}</span></div>`).join('')}</div>`;
+  const yLead = [{ l: '연도', f: r => r.y ?? '통산' }, { l: '팀', f: r => r.y ? `<span class="tmn">${esc(r.team)}</span>` : '' }];
+  const psLead = [{ l: '연도', f: r => r.y ?? '통산' }, { l: '시리즈', f: r => r.s ? SERIES[r.s] : '' }, { l: '팀', f: r => r.y ? `<span class="tmn">${esc(r.team)}</span>` : '' }];
+  const withTotal = (rows, agg) => rows.length > 1 ? [...rows, agg(rows)] : rows;
+  const tbl = (cols, rows, agg, lead = yLead) => { const all = withTotal(rows, agg); return table(cols, all, { lead, sortable: false, totalIdx: rows.length > 1 ? all.length - 1 : -1 }); };
+  const tabs = [['basic', '시즌 기록'], ['sabr', '세이버 지표'], ...(ph.length || pp.length ? [['post', '포스트시즌']] : []), ...((pit ? hr.length : pr.length) ? [['other', pit ? '타격 기록' : '투구 기록']] : [])];
+  if (!tabs.some(t => t[0] === S.pTab)) S.pTab = 'basic';
+  let body = '';
+  if (S.pTab === 'basic') body = tbl((pit ? COLS.pit : COLS.bat).basic, main, pit ? aggPit : aggBat);
+  if (S.pTab === 'sabr') body = `<div class="panel-h"><h2 style="font-size:15px">시즌별 WAR</h2></div>${warChart(main)}${tbl((pit ? COLS.pit : COLS.bat).sabr, main, pit ? aggPit : aggBat)}`
+    + (pit ? '' : `<div class="panel-h"><h2 style="font-size:15px">WAR 구성 (득점 단위)</h2><span class="sub">Off = 타격 + 구장 + BsR · Def = 수비 + 포지션</span></div>${tbl(WARPARTS, main, aggBat)}`);
+  if (S.pTab === 'post') body = (ph.length ? `<h3 style="margin:0;font-size:15px">타격</h3>${tbl(COLS.pbat, ph, r => aggPost(r, false), psLead)}` : '') + (pp.length ? `<h3 style="margin:0;font-size:15px">투구</h3>${tbl(COLS.ppit, pp, r => aggPost(r, true), psLead)}` : '');
+  if (S.pTab === 'other') body = pit ? tbl(COLS.bat.basic, hr, aggBat) : tbl(COLS.pit.basic, pr, aggPit);
+
+  $('#app').innerHTML = `
+  <button class="back" id="back">‹ 이전 화면</button>
+  <section class="panel">
+    <div class="profile">${face(P.id, P.tm, P.y1, 'lg')}<div><h1>${esc(P.name)}</h1>
+      <div class="meta"><span>${teamDot(P.tm)} ${esc(P.team)}</span><span>${esc(P.pos || (pit ? '투수' : '타자'))}</span><span>${P.y0 === P.y1 ? P.y0 : `${P.y0}–${P.y1}`} (${new Set(main.map(r => r.y)).size}시즌)</span>${teams.length > 1 ? `<span>${teams.map(esc).join(' → ')}</span>` : ''}</div></div></div>
+  </section>
+  <section class="panel">
+    <div class="panel-h"><h2>${last.y} 시즌</h2><span class="sub">${esc(last.team)}${pit ? ` · ${ipf(last.outs)}이닝` : ` · ${last.PA}타석`}</span></div>
+    ${summary(last, true)}
+    <div class="panel-h"><h2>통산</h2><span class="sub">${pit ? `${ipf(ca.outs)}이닝` : `${int(ca.PA)}타석`}</span></div>
+    ${summary(ca, false)}
+  </section>
+  <section class="panel">
+    <div class="pill" id="pl-tab">${tabs.map(([k, l]) => `<button data-t="${k}" aria-pressed="${S.pTab === k}">${l}</button>`).join('')}</div>
+    ${body}
+    <p class="hint"><a href="https://www.koreabaseball.com/Record/Player/${pit ? 'PitcherDetail' : 'HitterDetail'}/Basic.aspx?playerId=${encodeURIComponent(id)}" target="_blank" rel="noopener" style="color:var(--accent)">KBO 공식 기록에서 보기 ↗</a></p>
+  </section>`;
+  $('#back').onclick = () => { S.player = null; render(); };
+  $('#pl-tab').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.pTab = b.dataset.t; render(); };
+}
+
+// ---------- league / guide ----------
+function renderLeague() {
+  const cols = [C('teams','구단',int),C('G','팀당 경기',int),C('AVG','리그 타율',f3),C('OBP','출루율',f3),C('SLG','장타율',f3),C('ERA','평균자책',f2),C('RA9','9이닝당 실점',f2),
+    C('wBB','볼넷',f2),C('w1B','단타',f2),C('w2B','2루타',f2),C('w3B','3루타',f2),C('wHR','홈런',f2),C('RPW','1승당 득점',f2),C('cFIP','FIP 상수',f2)];
+  $('#app').innerHTML = `<section class="panel"><div class="panel-h"><h2>시즌별 리그 환경</h2><span class="sub">볼넷~홈런 열은 그 시즌 wOBA 가중치예요</span></div>
+    <div class="prose"><p>같은 홈런 하나도 타고투저 시즌과 투고타저 시즌에서는 가치가 달라요. 모든 세이버 지표는 그 시즌 KBO 전체 기록으로 구한 아래 값을 기준으로 계산돼요.</p></div>
+    ${table(cols, D.meta.league.slice().sort((a, b) => b.y - a.y), { lead: [{ l: '시즌', f: r => r.y }], sortable: false })}</section>
+    <section class="panel"><div class="panel-h"><h2>구단별 구장 계수</h2><span class="sub">1.000보다 크면 타자에게 유리한 홈구장 · 3시즌 평균, 홈 경기 절반만 반영</span></div>
+    ${(() => { const ls = D.meta.league.filter(L => L.hasPark).sort((a, b) => b.y - a.y); const tms = Object.keys(TEAMNOW).filter(t => ls.some(L => L.PF[t]));
+      return table(tms.map(t => C(t, TEAMNOW[t], v => v == null ? '' : v.toFixed(3))), ls.map(L => ({ y: L.y, ...L.PF })), { lead: [{ l: '시즌', f: r => r.y }], sortable: false }); })()}</section>`;
+}
+function renderGuide() {
+  const T = (k, s, b, f) => `<div class="term"><h4>${k}<span>${s}</span></h4><p>${b}</p>${f ? `<code>${f}</code>` : ''}</div>`;
+  $('#app').innerHTML = `
+  <section class="panel"><div class="panel-h"><h2>계산 기준: FanGraphs</h2></div><div class="prose">
+    <p>모든 세이버 지표는 MLB 세이버메트릭스의 표준인 FanGraphs 공식을 KBO 공식 기록에 그대로 적용해 직접 계산해요. 대체 선수 기준선, 포지션 보정, 1승당 득점도 FanGraphs 값을 써서 MLB 선수 WAR와 같은 척도로 비교할 수 있어요.</p>
+    <p>한국 기록 사이트(스탯티즈, 네이버 스포츠 등)는 대체 선수 기준선을 더 낮게 잡고 포지션 보정을 작게 줘요. 그래서 그쪽 WAR가 대체로 1~2승 높게 나와요. 순위는 거의 비슷하고 숫자 크기가 달라요.</p>
+    <p>KBO가 공개하지 않는 데이터가 필요한 항목은 공식 기록으로 추정하거나 뺐어요. 아래 "FanGraphs와 다른 점"에 정리했어요.</p></div></section>
+  <section class="panel"><div class="panel-h"><h2>타자 WAR</h2></div><div class="prose">
+    <p><b>WAR = (Off + Def + 리그 보정 + 대체 수준) ÷ 1승당 득점</b></p>
+    <p>Off(공격) = 타격 + 구장 보정 + BsR(주루) · Def(수비) = 수비 + 포지션 보정. 각 항목은 리그 평균 선수보다 몇 점을 더 냈는지(막았는지)를 득점으로 나타내요. 리그 전체 WAR는 FanGraphs처럼 경기 수 2,430경기당 1,000승 비율(팀 수 × 경기 수 × 0.206승)이 되도록 맞추고, 타자 57%·투수 43%로 나눠요.</p></div></section>
+  <section class="panel"><div class="panel-h"><h2>지표 사전</h2></div><div class="gloss">
+    ${T('wOBA', '가중 출루율', '볼넷, 사구, 단타, 2루타, 3루타, 홈런에 실제 득점 가치만큼 가중치를 준 출루율이에요. 가중치는 시즌마다 KBO 득점 환경으로 다시 구하고, 리그 평균 wOBA가 리그 출루율과 같아지도록 맞춰요(FanGraphs와 같은 방식).', '(uBB×w + HBP×w + 1B×w + 2B×w + 3B×w + HR×w) / (AB + BB − IBB + SF + HBP)')}
+    ${T('wRC+', '조정 득점 창출력', '리그 평균 타자를 100으로 둔 값이에요. 구장 보정이 들어가요. 130이면 평균보다 30% 더 많은 득점을 만들었다는 뜻이에요.', '((wRAA/PA + lgR/PA) + (lgR/PA − PF × lgR/PA)) / lgR/PA × 100')}
+    ${T('ISO · BABIP', '순수 장타력 · 인플레이 타구 안타율', 'ISO는 장타율에서 타율을 뺀 값이에요. BABIP는 그라운드 안으로 간 타구가 안타가 된 비율로, 평균과 크게 다르면 운의 영향을 의심해 볼 수 있어요.', 'ISO = SLG − AVG · BABIP = (H − HR) / (AB − K − HR + SF)')}
+    ${T('Off', '공격 득점', '타격(wRAA) + 구장 보정 + BsR이에요. 리그 평균 대비 공격으로 낸 점수예요.', '')}
+    ${T('BsR', '주루 득점', 'FanGraphs BsR = wSB(도루) + wGDP(병살 회피) + UBR(한 베이스 더 가기)예요. KBO는 UBR 데이터를 공개하지 않아 도루와 병살만 넣었어요.', 'wSB = SB×runSB + CS×runCS − lgwSB×(1B+BB+HBP−IBB)')}
+    ${T('Def', '수비 득점', '수비 추정 + 포지션 보정이에요. 포지션 보정은 FanGraphs 값을 이닝 비율만큼 줘요: 포수 +12.5, 유격수 +7.5, 2루·3루·중견수 +2.5, 좌·우익수 −7.5, 1루 −12.5, 지명타자 −17.5 (풀시즌 기준).', '')}
+    ${T('수비 추정', 'UZR 대신 쓰는 값', 'FanGraphs는 타구 위치 데이터로 UZR을 계산하지만 KBO는 이 데이터를 공개하지 않아요. 그래서 타구 데이터가 없던 2002년 이전 MLB처럼 공식 수비 기록으로 추정해요. 포지션별 처리 아웃(자살+보살, 1루수는 보살만)을 리그 평균과 비교하고, 팀 투수진의 땅볼·뜬공 성향을 보정해요. 최근 3시즌을 3:2:1로 가중 평균하고 절반으로 줄인 뒤 한 시즌 ±10점으로 제한해요. 포수는 도루 저지와 포일로 계산해요.', '')}
+    ${T('구장 보정', 'Park Factor', 'FanGraphs처럼 최대 5시즌 홈/원정 득점 비율을 평균하고 평균 쪽으로 당긴 뒤, 홈 경기가 절반이라 절반만 반영해요. 2001년 이후 모든 정규시즌 경기 결과로 계산해요.', 'PF = (1 + 홈 경기 득점/경기 ÷ 원정 경기 득점/경기) ÷ 2')}
+    ${T('FIP', '수비 무관 평균자책점', '투수가 직접 책임지는 홈런, 볼넷, 사구, 삼진만으로 계산한 평균자책점이에요. 상수는 리그 FIP가 리그 ERA와 같아지도록 매 시즌 구해요.', '(13×HR + 3×(BB+HBP) − 2×K) / IP + 상수')}
+    ${T('ERA- · FIP-', '조정 평균자책점', 'FanGraphs의 마이너스 지표예요. 리그 평균이 100이고 낮을수록 좋아요. 구장 보정이 들어가요. 80이면 평균보다 20% 잘 막았다는 뜻이에요. 기본 기록 탭에는 Baseball-Reference 방식의 ERA+(높을수록 좋음)도 있어요.', 'FIP- = 100 × (FIP + (FIP − FIP×PF)) / lgERA')}
+    ${T('LOB%', '잔루율', '출루시킨 주자 중 홈에 들여보내지 않은 비율이에요. 리그 평균은 보통 70% 안팎이고, 크게 높거나 낮으면 다음 시즌 평균 쪽으로 돌아오는 경향이 있어요.', '(H + BB + HBP − R) / (H + BB + HBP − 1.4×HR)')}
+    ${T('K% · BB% · K-BB%', '타석당 삼진·볼넷', '이닝당보다 타석당으로 보는 게 정확해요. 타자는 K%가 낮고 BB%가 높을수록, 투수는 그 반대가 좋아요.', 'K% = SO / PA (투수는 상대 타자 수)')}
+    ${T('투수 WAR', 'FanGraphs FIP 기반', 'FIP를 실점 단위(RA9)로 바꾸고 구장 보정한 뒤 리그 평균과 비교해요. 1승당 득점은 그 투수가 막은 실점 환경에 따라 투수마다 다르게 계산하고, 대체 수준은 선발 9이닝당 0.12승, 구원 0.03승이에요(선발 비율로 섞음).', 'WAR = ((lgRA9 − FIPR9/PF) / 동적 1승당 득점 + 대체 수준) × IP/9')}
+  </div></section>
+  <section class="panel"><div class="panel-h"><h2>FanGraphs와 다른 점</h2></div><div class="prose">
+    <p><b>KBO가 공개하지 않아 추정한 것:</b> 수비(UZR 대신 처리 아웃 기반 추정), 병살 회피(병살 기회 대신 인플레이 타구 기준).</p>
+    <p><b>KBO가 공개하지 않아 뺀 것:</b> 한 베이스 더 가는 주루(UBR), 구원투수 등판 상황 가중치(gmLI, FanGraphs는 마무리 투수 WAR를 이걸로 올려줘요), 내야 뜬공(ifFIP), 포수 프레이밍.</p>
+    <p><b>연도별 범위:</b> 수비·주루·선발 등판 기록과 경기별 결과는 2001년부터 공개돼요. 2000년 이전 WAR에는 포지션·수비·주루·구장 보정이 빠져 있고, 투수 선발 비율은 경기당 이닝으로 추정해요.</p>
+    <p>2018년 이전에 시즌 중 팀을 옮긴 선수는 KBO 기록실처럼 시즌 전체 기록이 마지막 팀으로 표시돼요.</p></div></section>`;
+}
+
+// ---------- search ----------
+const box = $('#sbox'), qi = $('#q'), sg = $('#sugg');
+let hits = [], sel = -1;
+function search(q) {
+  q = q.trim().replace(/\s+/g, '');
+  if (!q || !D) return [];
+  const cho = isCho(q);
+  const scored = [];
+  for (const o of D.idx) {
+    let s = -1;
+    if (cho) { const i = o.cho.indexOf(q); if (i >= 0) s = o.cho === q ? 3 : i === 0 ? 2 : 1; }
+    else if (o.name === q) s = 4;
+    else if (o.name.startsWith(q)) s = 3;
+    else if (o.name.includes(q)) s = 2;
+    else if (q.length > 1 && /[ㄱ-ㅎ]$/.test(q) && o.name.startsWith(q.slice(0, -1)) && o.cho[q.length - 1] === q.at(-1)) s = 1;
+    if (s >= 0) scored.push([s, (o.y1 >= D.years[0] - 1 ? 1e6 : 0) + o.pa + o.ip * 4.3, o]);
+  }
+  return scored.sort((a, b) => b[0] - a[0] || b[1] - a[1]).slice(0, 8).map(x => x[2]);
+}
+function hl(name, q) {
+  q = q.trim();
+  const i = isCho(q) ? choOf(name).indexOf(q) : name.indexOf(q);
+  return i < 0 ? esc(name) : esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + q.length)) + '</mark>' + esc(name.slice(i + q.length));
+}
+function showSugg() {
+  const q = qi.value;
+  hits = search(q); sel = hits.length ? 0 : -1;
+  if (!q.trim()) { sg.hidden = true; box.setAttribute('aria-expanded', 'false'); return; }
+  sg.innerHTML = hits.length ? hits.map((o, i) => `<button role="option" data-pid="${esc(o.id)}" aria-selected="${i === sel}">${face(o.id, o.tm, o.y1, 'sm')}
+    <span><span class="nm">${hl(o.name, q)}</span><br><span class="info">${esc(o.team)} · ${esc(o.pos || '')} · ${o.y0 === o.y1 ? o.y0 : o.y0 + '–' + o.y1}</span></span>
+    <span class="war">통산 WAR<br><b class="num">${o.war.toFixed(1)}</b></span></button>`).join('')
+    : `<div class="none">'${esc(q)}' 선수를 찾지 못했어요. 이름을 다시 확인해 주세요.</div>`;
+  sg.hidden = false; box.setAttribute('aria-expanded', 'true');
+}
+qi.addEventListener('input', showSugg);
+qi.addEventListener('focus', () => qi.value.trim() && showSugg());
+qi.addEventListener('keydown', e => {
+  if (sg.hidden) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); if (!hits.length) return;
+    sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length;
+    sg.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-selected', String(i === sel)));
+  } else if (e.key === 'Enter' && hits[sel]) { openPlayer(hits[sel].id); }
+  else if (e.key === 'Escape') { sg.hidden = true; }
+});
+document.addEventListener('click', e => { if (!box.contains(e.target)) sg.hidden = true; });
+function openPlayer(id) { S.player = id; S.pTab = 'basic'; qi.value = ''; sg.hidden = true; qi.blur(); render(); window.scrollTo(0, 0); }
+
+// ---------- shell ----------
+function render() {
+  document.querySelectorAll('#nav button').forEach(b => b.setAttribute('aria-current', String(!S.player && b.dataset.v === S.view)));
+  if (!D) return;
+  if (S.player) return renderPlayer();
+  ({ rank: renderRank, post: renderPost, league: renderLeague, guide: renderGuide })[S.view]();
+}
+$('#nav').onclick = e => { const b = e.target.closest('button[data-v]'); if (!b) return; S.view = b.dataset.v; S.player = null; render(); window.scrollTo(0, 0); };
+$('#logo').onclick = () => { S.view = 'rank'; S.player = null; render(); window.scrollTo(0, 0); };
+document.addEventListener('click', e => {
+  const p = e.target.closest('[data-pid]'); if (p) { openPlayer(p.dataset.pid); return; }
+  const g = e.target.closest('[data-go]'); if (g) { S.view = g.dataset.go; S.player = null; render(); window.scrollTo(0, 0); }
+});
+load().then(render).catch(err => { $('#app').innerHTML = `<div class="empty">기록 파일을 불러오지 못했어요 (${esc(err.message)}). 새로고침해 보세요.</div>`; });
+})();
+</script>

@@ -1,0 +1,14 @@
+{
+  "name": "kbo-saber",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scrape": "node scraper/scrape.mjs",
+    "scrape:all": "node scraper/scrape.mjs --all",
+    "build": "python3 scraper/process.py data/kbo_raw.json site/data",
+    "serve": "python3 -m http.server 8000 -d site"
+  },
+  "dependencies": {
+    "cheerio": "1.0.0"
+  }
+}
