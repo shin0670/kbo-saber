@@ -95,15 +95,12 @@ async function scrape(url, season, series) {
   const teams = $('select[name$="ddlTeam$ddlTeam"] option').map((_, o) => $(o).attr('value')).get().filter(Boolean);
   let head = rows($).head;
   const out = [];
-  // KBO server bug: for some season/team combinations (e.g. hitters' Basic2, 2001 롯데), page 2+ returns
-  // the PREVIOUS team's rows no matter how often it is requested (the server keeps the old list).
-  // Each page is checked; if it is wrong, the team is fetched again split by position (포수/내야수/외야수),
-  // where every list fits on one page, and merged with page 1. Players without a fielding position
-  // (pitchers who batted a few times) can still be missing in that case; they are reported in _meta.
+  // KBO server bug: on some lists (typically the last team in the team menu) page 2+ returns the PREVIOUS
+  // team's rows, however often it is requested. Wrong pages are dropped here (never mixed in); the
+  // players they would have held are filled in afterwards from each player's own record page (repair()).
   const sig = r => JSON.stringify(r.rows.map(x => x.c));
   const majority = r => { const c = {}; r.rows.forEach(x => c[x.c[2]] = (c[x.c[2]] || 0) + 1); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0]; };
   const seen = new Set();
-  const posOpts = $('select[name$="ddlPos$ddlPos"] option').map((_, o) => $(o).attr('value')).get().filter(Boolean);
   for (const tm of teams) {
     const ov = { ...base, [P + 'ddlTeam$ddlTeam']: tm };
     let t$ = null;
@@ -115,7 +112,6 @@ async function scrape(url, season, series) {
     const r1 = rows(t$);
     const teamName = majority(r1);
     const got = [r1];
-    let broken = false;
     for (const p of pages(t$).slice(1)) {
       let ok = null;
       for (let a = 0; a < 2 && !ok; a++) {
@@ -126,27 +122,10 @@ async function scrape(url, season, series) {
                       (r.rows.length > 1 && majority(r) !== teamName);
         if (!wrong) ok = r;
       }
-      if (!ok) { broken = true; break; }
-      got.push(ok);
+      if (ok) got.push(ok);
+      else warnings.push(`${season} ${url.split('/Player/')[1]} ${tm} p${p}: KBO 페이지 오류 → 이 페이지는 버리고 개인 기록으로 보충`);
     }
-    let teamRows = got.flatMap(r => r.rows);
-    if (broken) {
-      if (!posOpts.length) throw new Error(`team ${tm}: page 2+ returns another team's rows (no position filter to work around)`);
-      const byId = new Map(r1.rows.map(x => [x.id, x]));
-      for (const pos of posOpts) {
-        const pov = { ...ov, [P + 'ddlPos$ddlPos']: pos };
-        const q$ = await post(url, t$, P + 'ddlPos$ddlPos', pov);
-        if (selv(q$, 'ddlPos$ddlPos') !== pos || selv(q$, 'ddlTeam$ddlTeam') !== tm) throw new Error(`team ${tm}: position filter ${pos} not applied`);
-        const parts = [rows(q$)];
-        for (const p of pages(q$).slice(1)) parts.push(rows(await post(url, q$, P + 'ucPager$btnNo' + p, pov)));
-        for (const r of parts) for (const x of r.rows) if (x.c[2] === teamName || !byId.has(x.id)) byId.set(x.id, x);
-      }
-      teamRows = [...byId.values()];
-      warnings.push(`${season} ${url.split('/Player/')[1]} ${tm}: KBO 페이지 오류 → 포지션별로 다시 받음 (${teamRows.length}명)`);
-    }
-    for (const r of got) if (r.rows.length) seen.add(sig(r));
-    if (r1.head.length) head = r1.head;
-    teamRows.forEach(x => out.push([x.id, tm, ...x.c.slice(1)]));
+    for (const r of got) { if (r.rows.length) seen.add(sig(r)); if (r.head.length) head = r.head; r.rows.forEach(x => out.push([x.id, tm, ...x.c.slice(1)])); }
   }
   return { head, teams, rows: out };
 }
@@ -173,6 +152,63 @@ for (const [key, url, y, s] of jobs) {
     console.error(`[${n}/${jobs.length}] ${key}: 실패 — ${e.message} (기존 데이터 유지)`);
   }
 }
+// ---------- repair: fill players missing from a table using their own record page ----------
+// A player who appears in one table of a season/team but not in another (dropped KBO page) gets that
+// season's line from Record/Player/{Hitter|Pitcher}Detail/Total.aspx, which has no paging at all.
+// Columns that page does not carry (IBB, SAC, SF, QS, NP ...) are filled with 0.
+const totalCache = new Map();
+async function totalRows(kind, id) {
+  const key = kind + id;
+  if (!totalCache.has(key)) {
+    const $ = await req(`https://www.koreabaseball.com/Record/Player/${kind}Detail/Total.aspx?playerId=${id}`);
+    const t = $('table').first();
+    const head = t.find('thead th').map((_, th) => $(th).text().trim()).get();
+    const list = t.find('tbody tr').map((_, tr) => [$(tr).find('td').map((_, td) => $(td).text().trim()).get()]).get()
+      .filter(c => c.length === head.length).map(c => Object.fromEntries(head.map((h, i) => [h, c[i]])));
+    totalCache.set(key, list);
+  }
+  return totalCache.get(key);
+}
+const n0 = v => { const x = parseFloat(String(v ?? '').replace(/,/g, '')); return isNaN(x) ? 0 : x; };
+const outsOf = s => String(s || '').split(/\s+/).reduce((a, p) => a + (p.includes('/') ? Math.round(3 * (+p.split('/')[0]) / (+p.split('/')[1] || 1)) : 3 * (+p || 0)), 0);
+function cellFor(col, t) {
+  if (t[col] !== undefined) return t[col];
+  switch (col) {
+    case 'TB': return String(n0(t.H) + n0(t['2B']) + 2 * n0(t['3B']) + 3 * n0(t.HR));
+    case 'OPS': return (n0(t.OBP) + n0(t.SLG)).toFixed(3);
+    case 'WHIP': { const ip = outsOf(t.IP) / 3; return ip ? ((n0(t.H) + n0(t.BB)) / ip).toFixed(2) : '-'; }
+    case 'MH': case 'RISP': case 'PH-BA': case 'AVG': return '-';
+    default: return '0';
+  }
+}
+async function repair(y) {
+  const groups = [{ kind: 'Hitter', tables: ['hb1', 'hb2'], extra: ['run'] }, { kind: 'Pitcher', tables: ['pb1', 'pb2'], extra: [] }];
+  for (const g of groups) {
+    const have = {}, people = new Map();
+    for (const t of [...g.tables, ...g.extra]) {
+      const tab = data[t + y]; if (!tab) continue;
+      have[t] = new Set(tab.rows.map(r => r[0] + '|' + r[3]));
+      for (const r of tab.rows) if (r[0]) people.set(r[0] + '|' + r[3], { id: r[0], tm: r[1], name: r[2], team: r[3] });
+    }
+    for (const t of g.tables) {
+      const tab = data[t + y]; if (!tab || !tab.head?.length) continue;
+      const cols = tab.head.slice(3);
+      let filled = 0;
+      for (const [k, p] of people) {
+        if (have[t].has(k)) continue;
+        try {
+          const line = (await totalRows(g.kind, p.id)).find(r => r['연도'] === String(y) && r['팀명'] === p.team);
+          if (!line) continue;
+          tab.rows.push([p.id, p.tm, p.name, p.team, ...cols.map(c => cellFor(c, line))]);
+          have[t].add(k); filled++;
+        } catch (e) { errors.push(`repair ${t}${y} ${p.name}: ${e.message}`); }
+      }
+      if (filled) { warnings.push(`${t}${y}: 빠진 선수 ${filled}명을 개인 기록 페이지로 보충`); console.log(`repair ${t}${y}: +${filled}`); }
+    }
+  }
+}
+for (const y of years) await repair(y);
+
 // ---------- park factors: every regular-season result with home/away (2001+) ----------
 // data["parkY"] = { teamCode: [homeG, runs in home games, awayG, runs in away games] }
 for (const y of years.filter(y => y >= 2001)) {
