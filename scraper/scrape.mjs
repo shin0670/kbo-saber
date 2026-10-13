@@ -157,12 +157,14 @@ for (const [key, url, y, s] of jobs) {
 // season's line from Record/Player/{Hitter|Pitcher}Detail/Total.aspx, which has no paging at all.
 // Columns that page does not carry (IBB, SAC, SF, QS, NP ...) are filled with 0.
 const totalCache = new Map();
+const totalHead = new Map();
 async function totalRows(kind, id) {
   const key = kind + id;
   if (!totalCache.has(key)) {
     const $ = await req(`https://www.koreabaseball.com/Record/Player/${kind}Detail/Total.aspx?playerId=${id}`);
     const t = $('table').first();
     const head = t.find('thead th').map((_, th) => $(th).text().trim()).get();
+    totalHead.set(key, `${$('table').length}개 표, ${head.slice(0, 4).join('/')}, 제목 ${$('title').text().trim().slice(0, 20)}`);
     const list = t.find('tbody tr').map((_, tr) => [$(tr).find('td').map((_, td) => $(td).text().trim()).get()]).get()
       .filter(c => c.length === head.length).map(c => Object.fromEntries(head.map((h, i) => [h, c[i]])));
     totalCache.set(key, list);
@@ -197,8 +199,9 @@ async function repair(y) {
       for (const [k, p] of people) {
         if (have[t].has(k)) continue;
         try {
-          const line = (await totalRows(g.kind, p.id)).find(r => r['연도'] === String(y) && r['팀명'] === p.team);
-          if (!line) continue;
+          const list = await totalRows(g.kind, p.id);
+          const line = list.find(r => r['연도'] === String(y) && r['팀명'] === p.team);
+          if (!line) { warnings.push(`repair ${t}${y} ${p.name}(${p.id}): 개인 기록에 ${y} ${p.team} 줄 없음 (읽은 줄 ${list.length}개: ${list.slice(0, 3).map(r => r['연도'] + r['팀명']).join(',')}; 표 머리 ${totalHead.get(g.kind + p.id)})`); continue; }
           tab.rows.push([p.id, p.tm, p.name, p.team, ...cols.map(c => cellFor(c, line))]);
           have[t].add(k); filled++;
         } catch (e) { errors.push(`repair ${t}${y} ${p.name}: ${e.message}`); }
