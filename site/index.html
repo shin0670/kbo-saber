@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>KBO 세이버 기록실</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -134,6 +135,9 @@ tr.total td { background: var(--head); font-weight: 700; color: var(--ink); }
 .pages button:disabled { opacity: .35; cursor: default; }
 .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
 .hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+#pv-mode { max-width: 100%; overflow-x: auto; }
+#pv-mode button { white-space: nowrap; padding: 6px 12px; }
+th .code { display: block; font-size: 10.5px; color: var(--muted); font-family: var(--font-num); }
 
 /* player */
 .profile { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
@@ -205,7 +209,7 @@ const tcol = tm => TCOLOR[tm] || '#6b7280';
 let D = null;
 const S = { view: 'rank', type: 'bat', season: null, team: '', qual: 'q', set: 'basic', sort: 'AVG', dir: -1, page: 0,
             ps: null, series: 'all', psType: 'bat', psSort: 'OPS', psDir: -1, psPage: 0,
-            player: null, pTab: 'basic' };
+            player: null, pTab: 'basic', pvMode: 'val' };
 
 // ---------- format ----------
 const f3 = v => v == null ? '-' : (v < 0 ? '-' : '') + Math.abs(v).toFixed(3).replace(/^0/, '');
@@ -555,7 +559,8 @@ function renderPlayer() {
   const psLead = [{ l: '연도', f: r => r.y ?? '통산' }, { l: '시리즈', f: r => r.s ? SERIES[r.s] : '' }, { l: '팀', f: r => r.y ? `<span class="tmn">${esc(r.team)}</span>` : '' }];
   const withTotal = (rows, agg) => rows.length > 1 ? [...rows, agg(rows)] : rows;
   const tbl = (cols, rows, agg, lead = yLead) => { const all = withTotal(rows, agg); return table(cols, all, { lead, sortable: false, totalIdx: rows.length > 1 ? all.length - 1 : -1 }); };
-  const tabs = [['basic', '시즌 기록'], ['sabr', '세이버 지표'], ...(ph.length || pp.length ? [['post', '포스트시즌']] : []), ...((pit ? hr.length : pr.length) ? [['other', pit ? '타격 기록' : '투구 기록']] : [])];
+  const hasPV = pit && pr.some(r => r.y >= PV_FROM) && (!D.PV || D.PV.ids.has(id));
+  const tabs = [['basic', '시즌 기록'], ['sabr', '세이버 지표'], ...(hasPV ? [['pitch', '구종가치']] : []), ...(ph.length || pp.length ? [['post', '포스트시즌']] : []), ...((pit ? hr.length : pr.length) ? [['other', pit ? '타격 기록' : '투구 기록']] : [])];
   if (!tabs.some(t => t[0] === S.pTab)) S.pTab = 'basic';
   let body = '';
   if (S.pTab === 'basic') body = tbl((pit ? COLS.pit : COLS.bat).basic, main, pit ? aggPit : aggBat);
@@ -563,6 +568,10 @@ function renderPlayer() {
     + (pit ? '' : `<div class="panel-h"><h2 style="font-size:15px">WAR 구성 (득점 단위)</h2><span class="sub">Off = 타격 + 구장 + BsR · Def = 수비 + 포지션</span></div>${tbl(WARPARTS, main, aggBat)}`);
   if (S.pTab === 'post') body = (ph.length ? `<h3 style="margin:0;font-size:15px">타격</h3>${tbl(COLS.pbat, ph, r => aggPost(r, false), psLead)}` : '') + (pp.length ? `<h3 style="margin:0;font-size:15px">투구</h3>${tbl(COLS.ppit, pp, r => aggPost(r, true), psLead)}` : '');
   if (S.pTab === 'other') body = pit ? tbl(COLS.bat.basic, hr, aggBat) : tbl(COLS.pit.basic, pr, aggPit);
+  if (S.pTab === 'pitch') {
+    if (!D.PV) { loadPV(); body = '<p class="hint">구종 기록을 불러오는 중이에요…</p>'; }
+    else body = pitchTab(id, pr);
+  }
 
   $('#app').innerHTML = `
   <button class="back" id="back">‹ 이전 화면</button>
@@ -583,6 +592,70 @@ function renderPlayer() {
   </section>`;
   $('#back').onclick = () => { S.player = null; render(); };
   $('#pl-tab').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.pTab = b.dataset.t; render(); };
+  const pm = $('#pv-mode'); if (pm) pm.onclick = e => { const b = e.target.closest('button'); if (!b) return; S.pvMode = b.dataset.m; render(); };
+}
+
+// ---------- pitch values (구종가치) ----------
+// 네이버 문자중계 투구 기록으로 FanGraphs Pitch Values 방식으로 계산 (scraper/pitch_site.py 가 만든 파일)
+const PV_FROM = 2009;
+const PV_ORDER = ['직구', '포심', '투심', '싱커', '커터', '슬라이더', '스위퍼', '커브', '너클커브', '슬러브', '체인지업', '서클체인지업', '포크', '스플리터', '너클볼'];
+const PV_CODE = { 직구: 'FB', 포심: 'FB', 투심: 'SI', 싱커: 'SI', 커터: 'CT', 슬라이더: 'SL', 스위퍼: 'ST', 커브: 'CB', 너클커브: 'CB', 슬러브: 'CB', 체인지업: 'CH', 서클체인지업: 'CH', 포크: 'SF', 스플리터: 'SF', 너클볼: 'KN' };
+const PV_MODES = [['val', '구종가치'], ['per100', '100구당'], ['usage', '구사율'], ['velo', '평균구속']];
+let pvLoading = null;
+function loadPV() {
+  if (pvLoading) return;
+  pvLoading = fetch('data/pitch_values.json').then(r => { if (!r.ok) throw new Error('pitch_values.json'); return r.json(); }).then(t => {
+    const rows = objs(t), by = new Map();
+    for (const r of rows) { if (r.k !== 0) continue; if (!by.has(r.id)) by.set(r.id, []); by.get(r.id).push(r); }
+    D.PV = { by, ids: new Set(by.keys()), est: new Set(t.est) };
+    render();
+  }).catch(() => { D.PV = { by: new Map(), ids: new Set(), est: new Set(), err: true }; render(); });
+}
+function pitchTab(id, pr) {
+  const rows = D.PV.by.get(id) || [];
+  if (D.PV.err) return '<p class="hint">구종 기록 파일을 불러오지 못했어요. 새로고침해 보세요.</p>';
+  if (!rows.length) return '<p class="hint">이 선수는 2009년 이후 구종 기록이 없어요.</p>';
+  const mode = S.pvMode || 'val';
+  // 통산 투구 수 기준으로 구종 정렬, 통산 1% 미만(또는 30구 미만) 구종은 '기타'로 묶음
+  const tot = new Map(); rows.forEach(r => tot.set(r.pt, (tot.get(r.pt) || 0) + r.n));
+  const all = [...tot.values()].reduce((a, b) => a + b, 0);
+  const keep = new Set([...tot].filter(([pt, n]) => pt !== '미분류' && n >= Math.max(30, all * 0.01)).map(([pt]) => pt));
+  const kind = pt => keep.has(pt) ? pt : pt === '미분류' ? '미분류' : '기타';
+  const rank = pt => { const i = PV_ORDER.indexOf(pt); return pt === '기타' ? 900 : pt === '미분류' ? 901 : i < 0 ? 800 : i; };
+  const types = [...new Set(rows.map(r => kind(r.pt)))].sort((a, b) => rank(a) - rank(b) || (tot.get(b) || 0) - (tot.get(a) || 0));
+  const team = new Map(); pr.forEach(r => team.set(r.y, r.team));
+  const cell = () => ({ n: 0, val: 0, vs: 0, vn: 0 });
+  const add = (c, r) => { c.n += r.n; c.val += r.val; if (r.velo != null) { c.vs += r.velo * r.n; c.vn += r.n; } };
+  const seasons = new Map(), career = {};
+  for (const r of rows) {
+    if (!seasons.has(r.y)) seasons.set(r.y, {});
+    const s = seasons.get(r.y), t = kind(r.pt);
+    add(s[t] ??= cell(), r); add(career[t] ??= cell(), r);
+  }
+  const fill = (cells, y) => {
+    const o = { y, team: y ? team.get(y) || '' : '' }, n = Object.values(cells).reduce((a, c) => a + c.n, 0);
+    o.NP = n; o.TOT = Object.values(cells).reduce((a, c) => a + c.val, 0);
+    for (const t of types) { const c = cells[t]; if (!c || !c.n) continue;
+      o[t] = mode === 'val' ? c.val : mode === 'per100' ? 100 * c.val / c.n : mode === 'usage' ? c.n / n : c.vn ? c.vs / c.vn : null; }
+    return o;
+  };
+  const body = [...seasons.keys()].sort((a, b) => a - b).map(y => fill(seasons.get(y), y));
+  if (body.length > 1) body.push(fill(career, null));
+  const fmt = mode === 'val' ? f1 : mode === 'per100' ? f2 : mode === 'usage' ? pct : f1;
+  const t = mode === 'val' ? { t: [5, -5] } : mode === 'per100' ? { t: [1.5, -1.5] } : {};
+  const label = pt => mode === 'val' || mode === 'per100' ? (PV_CODE[pt] ? `${pt} <span class="code">w${PV_CODE[pt]}${mode === 'per100' ? '/C' : ''}</span>` : pt) : pt;
+  const cols = [C('NP', '투구 수', int), ...types.map(pt => C(pt, label(pt), fmt, t)), ...(mode === 'val' ? [C('TOT', '합계', f1, { t: [10, -10] })] : [])];
+  const est = D.PV.est;
+  const lead = [{ l: '연도', f: r => r.y == null ? '통산' : est.has(r.y) ? `${r.y}<sup title="추정치">*</sup>` : r.y }, { l: '팀', f: r => r.y ? `<span class="tmn">${esc(r.team)}</span>` : '' }];
+  const note = {
+    val: '리그 평균 구종보다 몇 점을 덜 내줬는지예요. +면 투수에게 좋은 공이에요. 많이 던질수록 크게 쌓여요.',
+    per100: '그 구종 100개당 구종가치예요. 적게 던진 구종은 크게 튀니 투구 수와 같이 보세요.',
+    usage: '그 시즌 던진 공 중 그 구종의 비율이에요.',
+    velo: '중계에 찍힌 구속의 평균이에요 (km/h).',
+  }[mode];
+  return `<div class="pill" id="pv-mode" style="margin-bottom:12px">${PV_MODES.map(([k, l]) => `<button data-m="${k}" aria-pressed="${mode === k}">${l}</button>`).join('')}</div>
+    ${table(cols, body, { lead, sortable: false, totalIdx: body.length > 1 ? body.length - 1 : -1 })}
+    <p class="hint" style="margin-top:8px">${note} 정규시즌만, 네이버 문자중계 투구 기록 기준이에요. 구종 이름은 중계 표기를 그대로 써서 같은 공이 해마다 다르게 적혔을 수 있어요.${body.some(r => est.has(r.y)) ? ' <b>*</b> 2009~2015년은 중계에 아웃·점수가 남아 있지 않아 2016년 득점 가치를 빌려 쓴 추정치예요.' : ''} <button data-go="guide" style="border:0;background:none;padding:0;color:var(--accent);cursor:pointer;font:inherit">계산 방식</button></p>`;
 }
 
 // ---------- league / guide ----------
@@ -617,6 +690,7 @@ function renderGuide() {
     ${T('구장 보정', 'Park Factor', 'FanGraphs처럼 최대 5시즌 홈/원정 득점 비율을 평균하고 평균 쪽으로 당긴 뒤, 홈 경기가 절반이라 절반만 반영해요. 2001년 이후 모든 정규시즌 경기 결과로 계산해요.', 'PF = (1 + 홈 경기 득점/경기 ÷ 원정 경기 득점/경기) ÷ 2')}
     ${T('FIP', '수비 무관 평균자책점', '투수가 직접 책임지는 홈런, 볼넷, 사구, 삼진만으로 계산한 평균자책점이에요. 상수는 리그 FIP가 리그 ERA와 같아지도록 매 시즌 구해요.', '(13×HR + 3×(BB+HBP) − 2×K) / IP + 상수')}
     ${T('ERA- · FIP-', '조정 평균자책점', 'FanGraphs의 마이너스 지표예요. 리그 평균이 100이고 낮을수록 좋아요. 구장 보정이 들어가요. 80이면 평균보다 20% 잘 막았다는 뜻이에요. 기본 기록 탭에는 Baseball-Reference 방식의 ERA+(높을수록 좋음)도 있어요.', 'FIP- = 100 × (FIP + (FIP − FIP×PF)) / lgERA')}
+    ${T('구종가치', 'Pitch Values (wFB, wSL …)', 'FanGraphs Pitch Values 방식이에요. 공 하나마다 던지기 전과 후의 볼카운트·타석 결과가 갖는 득점 가치를 비교해서, 그 공 때문에 실점 기대가 얼마나 줄었는지를 구해요. 이걸 투수·구종별로 모두 더한 값이 구종가치이고, 100개당으로 나눈 값이 100구당 구종가치(wFB/C 등)예요. 볼카운트와 타석 결과의 가치는 매 시즌 KBO 전체 타석으로 다시 구해요. 2009~2015년은 중계에 아웃·주자·점수가 남아 있지 않아 2016년 값을 빌려 쓴 추정치예요. 구종은 네이버 문자중계 표기를 따라요.', '공 하나 가치 = −(던진 후 상태 가치 − 던지기 전 상태 가치)')}
     ${T('LOB%', '잔루율', '출루시킨 주자 중 홈에 들여보내지 않은 비율이에요. 리그 평균은 보통 70% 안팎이고, 크게 높거나 낮으면 다음 시즌 평균 쪽으로 돌아오는 경향이 있어요.', '(H + BB + HBP − R) / (H + BB + HBP − 1.4×HR)')}
     ${T('K% · BB% · K-BB%', '타석당 삼진·볼넷', '이닝당보다 타석당으로 보는 게 정확해요. 타자는 K%가 낮고 BB%가 높을수록, 투수는 그 반대가 좋아요.', 'K% = SO / PA (투수는 상대 타자 수)')}
     ${T('투수 WAR', 'FanGraphs FIP 기반', 'FIP를 실점 단위(RA9)로 바꾸고 구장 보정한 뒤 리그 평균과 비교해요. 1승당 득점은 그 투수가 막은 실점 환경에 따라 투수마다 다르게 계산하고, 대체 수준은 선발 9이닝당 0.12승, 구원 0.03승이에요(선발 비율로 섞음).', 'WAR = ((lgRA9 − FIPR9/PF) / 동적 1승당 득점 + 대체 수준) × IP/9')}
