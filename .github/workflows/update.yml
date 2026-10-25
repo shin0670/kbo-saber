@@ -54,6 +54,22 @@ jobs:
             node scraper/scrape.mjs
           fi
 
+      # 네이버 문자중계에서 올해 새 경기 투구 기록을 받아 구종가치를 다시 계산
+      # 네이버가 막히거나 실패해도 KBO 기록 업데이트는 계속 진행되게 continue-on-error
+      - name: 구종가치 업데이트 (올해만)
+        if: github.event_name != 'push'
+        continue-on-error: true
+        timeout-minutes: 40
+        env:
+          PITCH_DATA_DIR: data/pitch_data
+          PITCH_OUT_DIR: ${{ runner.temp }}/pitch_values
+        run: |
+          pip install --quiet requests
+          Y=$(TZ=Asia/Seoul date +%Y)
+          python scraper/collect_pitches.py --years "$Y"
+          python scraper/pitch_values.py --years "$Y"
+          python scraper/pitch_site.py "$PITCH_OUT_DIR" site/data/pitch_values.json
+      
       - name: 세이버 지표 계산
         run: python scraper/process.py data/kbo_raw.json site/data
 

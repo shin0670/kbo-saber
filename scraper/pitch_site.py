@@ -6,6 +6,8 @@
 
 - 시즌 중 팀을 옮긴 투수는 팀별로 나뉜 기록을 합친다 (구사율·평균구속 다시 계산)
 - 2015년 이전은 중계에 아웃·점수 기록이 없어 2016년 득점가치를 빌려 쓴 추정치라서 est 목록에 넣는다
+- 사이트 파일이 이미 있으면, 이번에 계산한 시즌만 바꾸고 나머지 시즌은 그대로 둔다
+  (GitHub Actions는 올해만 다시 계산하니까 2009~작년 기록이 지워지면 안 됨)
 """
 import csv
 import json
@@ -21,7 +23,8 @@ def main(src: str, out: str):
     src_dir = Path(src)
     files = sorted(src_dir.glob("구종가치_*.csv"))
     if not files:
-        sys.exit(f"{src_dir} 에 구종가치_연도.csv 파일이 없어요. pitch_values.py 를 먼저 실행해 주세요.")
+        print(f"{src_dir} 에 구종가치_연도.csv 파일이 없어서 사이트 파일을 그대로 둡니다.")
+        return
 
     rows, years = [], []
     for f in files:
@@ -52,12 +55,21 @@ def main(src: str, out: str):
                 round(100 * a["v"] / n, 2) if n else None,
             ])
 
+    out_path = Path(out)
+    if out_path.exists():
+        old = json.loads(out_path.read_text(encoding="utf-8"))
+        kept = [r for r in old.get("rows", []) if r[0] not in years]
+        rows += kept
+        years += sorted({r[0] for r in kept})
+        print(f"기존 파일에서 {len({r[0] for r in kept})}시즌은 그대로 두고, {sorted(set(years) - {r[0] for r in kept})} 시즌만 새로 넣었어요.")
+
+    est = {y for y in years if y < ESTIMATED_BEFORE}
     rows.sort(key=lambda r: (r[0], r[1], r[2], -r[4]))
     data = {
         "cols": ["y", "id", "k", "pt", "n", "usage", "velo", "val", "per100"],
         "rows": rows,
         "years": [min(years), max(years)],
-        "est": [y for y in years if y < ESTIMATED_BEFORE],
+        "est": sorted(est),
     }
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:

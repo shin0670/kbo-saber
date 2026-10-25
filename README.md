@@ -42,11 +42,20 @@ KBO 공식 기록실 (koreabaseball.com). 공개 배포 전 KBO 이용약관을 
 
 ## 구종가치 (투수 페이지 "구종가치" 탭)
 
-네이버 문자중계 투구 기록으로 FanGraphs Pitch Values 방식으로 계산해요 (2009년~). 이 부분은 자동 업데이트에 들어 있지 않아서 직접 돌려야 해요.
+네이버 문자중계 투구 기록으로 FanGraphs Pitch Values 방식으로 계산해요 (2009년~).
+매일 밤 자동 업데이트 때 **올해 시즌만** 새 경기를 받아 다시 계산하고, 작년까지 기록은 `site/data/pitch_values.json`에 있는 그대로 둬요.
+
+| 경로 | 내용 |
+|---|---|
+| `scraper/collect_pitches.py` | 네이버 문자중계 투구 기록 수집 |
+| `scraper/pitch_values.py` | 구종가치 계산 |
+| `scraper/pitch_site.py` | 계산 결과 → 사이트 파일 (계산한 시즌만 바꿔 끼움) |
+| `data/pitch_data/올해/` | 올해 받은 경기 (자동 업데이트가 이어 받기용) |
+
+예전 시즌까지 전부 다시 계산하려면 (2009~2025 원본은 내 맥의 `~/pitch_data`에 있음):
 
 ```bash
-cd ~                                                    # shin 폴더에서
-python3 collect_pitches.py --years 2026                 # 올해 새 경기만 받기
-python3 pitch_values.py                                 # 구종가치 계산 → ~/pitch_values
+cd ~
+python3 pitch_values.py
 cd kbo-saber && python3 scraper/pitch_site.py ../pitch_values site/data/pitch_values.json
 ```
